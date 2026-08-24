@@ -1,0 +1,7 @@
+@import 'tailwindcss' source(none);
+@source '../**/*.{js,ts,jsx,tsx}';
+
+@import 'tw-animate-css';
+
+/* Enable class-based dark mode so toggling .dark on <html> activates dark: variants */
+@variant dark (&:where(.dark, .dark *));
