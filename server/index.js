@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { MongoClient, ObjectId } = require('mongodb');
 const bcrypt = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -20,7 +21,7 @@ async function startServer() {
     await client.connect();
     db = client.db('election_db');
     console.log("Connected to MongoDB");
-    
+
     app.listen(port, () => {
       console.log(`Server listening on port ${port}`);
     });
@@ -55,7 +56,7 @@ app.get('/api/applications/stats', async (req, res) => {
 app.post('/api/signup', async (req, res) => {
   try {
     const { name, phone, department, graduationYear, dob, gender, previousRole, email, password } = req.body;
-    
+
     if (!email) {
       return res.status(400).json({ error: 'Email is required for registration.' });
     }
@@ -120,7 +121,7 @@ app.post('/api/signup', async (req, res) => {
     };
 
     await db.collection('users').insertOne(newUser);
-    
+
     // Return user without password
     delete newUser.password;
     res.status(201).json(newUser);
@@ -130,23 +131,28 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
-app.post('/api/login', async (req, res) => {
+// Configure Login Rate Limiter (15 minutes, max 5 attempts)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 login requests per windowMs
+  message: { error: 'Too many login attempts from this IP. Your IP is temporarily banned for 15 minutes.' },
+  standardHeaders: true, 
+  legacyHeaders: false,
+});
+
+app.post('/api/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
-    
-    // Find user
+
     const user = await db.collection('users').findOne({ email });
     if (!user) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
-
-    // Validate password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
 
-    // Return user without password
     delete user.password;
     res.json(user);
   } catch (err) {
@@ -155,10 +161,95 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+// Verify user for forgot password
+app.post('/api/forgot-password/verify', async (req, res) => {
+  try {
+    const { email, dob, graduationYear } = req.body;
+
+    if (!email || !dob || !graduationYear) {
+      return res.status(400).json({ error: 'Email, Date of Birth, and Graduation Year are required.' });
+    }
+
+    const alumniMember = await db.collection('members').findOne({
+      $or: [
+        { 'basic.email_id': email },
+        { 'basic.alternate_email_id': email }
+      ]
+    });
+
+    if (!alumniMember) {
+      return res.status(404).json({ error: 'Alumni record not found.' });
+    }
+
+    // Verify Date of Birth
+    const dbDob = alumniMember.basic?.dateofbirth;
+    if (!dbDob) {
+      return res.status(400).json({ error: 'Alumni record does not have a Date of Birth to verify.' });
+    }
+    const reqDob = new Date(dob);
+    const dbDobDate = new Date(dbDob);
+    if (
+      reqDob.getUTCFullYear() !== dbDobDate.getUTCFullYear() ||
+      reqDob.getUTCMonth() !== dbDobDate.getUTCMonth() ||
+      reqDob.getUTCDate() !== dbDobDate.getUTCDate()
+    ) {
+      return res.status(403).json({ error: 'Incorrect verification details.' });
+    }
+
+    // Verify Graduation Year
+    const hasMatchingGradYear = alumniMember.education_details?.some(
+      (ed) => String(ed.end_year) === String(graduationYear)
+    );
+    if (!hasMatchingGradYear) {
+      return res.status(403).json({ error: 'Incorrect verification details.' });
+    }
+
+    // Check if user exists in the users table
+    const existingUser = await db.collection('users').findOne({ email });
+    if (!existingUser) {
+      return res.status(404).json({ error: 'Account not found. You need to sign up first.' });
+    }
+
+    res.json({ success: true, message: 'Identity verified. You can now reset your password.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error during verification.' });
+  }
+});
+
+// Reset Password
+app.post('/api/reset-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({ error: 'Email and new password are required.' });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    const result = await db.collection('users').updateOne(
+      { email },
+      { $set: { password: hashedPassword } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: 'Account not found.' });
+    }
+
+    res.json({ success: true, message: 'Password reset successfully. You can now log in.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error during password reset.' });
+  }
+});
+
 app.post('/api/applications', async (req, res) => {
   try {
     const { applicantEmail, name, department, graduationYear, phone, targetPositions, previousRoles, roleDurations, motivation } = req.body;
-    
+
     const newApplication = {
       applicantEmail,
       name,
@@ -192,7 +283,7 @@ app.get('/api/applications', async (req, res) => {
     if (emailFilter) {
       query.applicantEmail = emailFilter;
     }
-    
+
     const applications = await db.collection('applications').find(query).sort({ submittedAt: -1 }).toArray();
     res.json(applications);
   } catch (err) {
@@ -205,7 +296,7 @@ app.patch('/api/applications/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    
+
     if (!['pending', 'approved', 'rejected'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
