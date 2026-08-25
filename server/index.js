@@ -56,6 +56,10 @@ app.post('/api/signup', async (req, res) => {
   try {
     const { name, phone, department, graduationYear, dob, gender, previousRole, email, password } = req.body;
     
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required for registration.' });
+    }
+
     // Check if the user is a registered alumni
     const alumniMember = await db.collection('members').findOne({
       $or: [
@@ -66,6 +70,29 @@ app.post('/api/signup', async (req, res) => {
 
     if (!alumniMember) {
       return res.status(403).json({ error: 'You are not a registered alumni. Registration denied.' });
+    }
+
+    // Verify Date of Birth
+    const dbDob = alumniMember.basic?.dateofbirth;
+    if (!dbDob) {
+      return res.status(403).json({ error: 'Alumni record does not have a Date of Birth. Please contact admin.' });
+    }
+    const reqDob = new Date(dob);
+    const dbDobDate = new Date(dbDob);
+    if (
+      reqDob.getUTCFullYear() !== dbDobDate.getUTCFullYear() ||
+      reqDob.getUTCMonth() !== dbDobDate.getUTCMonth() ||
+      reqDob.getUTCDate() !== dbDobDate.getUTCDate()
+    ) {
+      return res.status(403).json({ error: 'The provided Date of Birth does not match the alumni records.' });
+    }
+
+    // Verify Graduation Year (Passout date)
+    const hasMatchingGradYear = alumniMember.education_details?.some(
+      (ed) => String(ed.end_year) === String(graduationYear)
+    );
+    if (!hasMatchingGradYear) {
+      return res.status(403).json({ error: 'The provided Graduation Year does not match the alumni records.' });
     }
 
     // Check if user exists
