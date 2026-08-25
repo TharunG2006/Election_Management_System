@@ -870,7 +870,156 @@ const AuthContainer = ({ children, title, subtitle }: any) => (
   </motion.div>
 );
 
-const SignInScreen = ({ onSignIn, onSwitchToSignUp }: any) => {
+const BadRequestScreen = ({ onBack }: any) => (
+  <AuthContainer title="400 Bad Request" subtitle="Something went wrong with your request.">
+    <div className="flex flex-col items-center justify-center space-y-6">
+      <div className="w-24 h-24 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center">
+        <XCircle size={48} />
+      </div>
+      <p className="text-slate-600 dark:text-slate-400 text-center">
+        The server could not understand the request due to invalid syntax or missing data.
+      </p>
+      <button onClick={onBack} className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3.5 rounded-xl hover:opacity-90 transition-opacity">
+        Back to Home
+      </button>
+    </div>
+  </AuthContainer>
+);
+
+const NotFoundScreen = ({ onBack }: any) => (
+  <AuthContainer title="404 Not Found" subtitle="We couldn't find what you're looking for.">
+    <div className="flex flex-col items-center justify-center space-y-6">
+      <div className="w-24 h-24 bg-orange-100 dark:bg-orange-900/30 text-orange-500 rounded-full flex items-center justify-center">
+        <Compass size={48} />
+      </div>
+      <p className="text-slate-600 dark:text-slate-400 text-center">
+        The page or resource you are looking for does not exist.
+      </p>
+      <button onClick={onBack} className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3.5 rounded-xl hover:opacity-90 transition-opacity">
+        Back to Home
+      </button>
+    </div>
+  </AuthContainer>
+);
+
+const ForgotPasswordScreen = ({ onBackToSignIn }: any) => {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [email, setEmail] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleVerify = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const dob = formData.get('dob');
+    const graduationYear = formData.get('graduationYear');
+    const inputEmail = formData.get('email') as string;
+    
+    try {
+      const res = await fetch('http://localhost:5000/api/forgot-password/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: inputEmail, dob, graduationYear })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEmail(inputEmail);
+        setStep(2);
+        setErrorMsg("");
+      } else {
+        setErrorMsg(data.error || 'Verification failed.');
+      }
+    } catch(err) {
+      setErrorMsg('Network error.');
+    }
+  };
+
+  const handleReset = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const newPassword = formData.get('newPassword') as string;
+    const confirmPassword = formData.get('confirmPassword') as string;
+
+    if (newPassword !== confirmPassword) {
+      setErrorMsg("Passwords do not match.");
+      return;
+    }
+
+    try {
+      const res = await fetch('http://localhost:5000/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, newPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('Password reset successfully! You can now log in.');
+        onBackToSignIn();
+      } else {
+        setErrorMsg(data.error || 'Failed to reset password.');
+      }
+    } catch(err) {
+      setErrorMsg('Network error.');
+    }
+  };
+
+  return (
+    <AuthContainer title="Forgot Password" subtitle={step === 1 ? "Verify your identity" : "Create a new password"}>
+      {errorMsg && (
+        <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-4 border border-red-200 dark:border-red-800">
+          {errorMsg}
+        </div>
+      )}
+      
+      {step === 1 ? (
+        <form className="space-y-4" onSubmit={handleVerify}>
+          <div>
+            <FormFieldLabel icon={Mail} label="Email Address" />
+            <input name="email" type="email" required className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
+          </div>
+          <div>
+            <FormFieldLabel icon={CalendarDays} label="Date of Birth" />
+            <input name="dob" type="date" required className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
+          </div>
+          <div>
+            <FormFieldLabel icon={GraduationCap} label="Graduation Year (Passout Date)" />
+            <input name="graduationYear" type="number" required className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
+          </div>
+          <button type="submit" className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3.5 rounded-xl hover:opacity-90 transition-opacity mt-4">
+            Verify Identity
+          </button>
+        </form>
+      ) : (
+        <form className="space-y-4" onSubmit={handleReset}>
+          <div>
+            <FormFieldLabel icon={Lock} label="New Password" />
+            <div className="relative">
+              <input name="newPassword" type={showPassword ? "text" : "password"} required minLength={8} className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-3 text-slate-400 hover:text-slate-600">
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <FormFieldLabel icon={Lock} label="Confirm Password" />
+            <input name="confirmPassword" type="password" required minLength={8} className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50" />
+          </div>
+          <button type="submit" className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3.5 rounded-xl hover:opacity-90 transition-opacity mt-4">
+            Reset Password
+          </button>
+        </form>
+      )}
+      
+      <div className="mt-6 text-center">
+        <button onClick={onBackToSignIn} className="text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 text-sm font-medium transition-colors">
+          Back to Login
+        </button>
+      </div>
+    </AuthContainer>
+  );
+};
+
+const SignInScreen = ({ onSignIn, onSwitchToSignUp, onSwitchToForgotPassword }: any) => {
   const [showPassword, setShowPassword] = useState(false);
   
   return (
@@ -907,6 +1056,11 @@ const SignInScreen = ({ onSignIn, onSwitchToSignUp }: any) => {
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
           </div>
+        </div>
+        <div className="flex justify-end mt-2">
+          <button type="button" onClick={onSwitchToForgotPassword} className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+            Forgot Password?
+          </button>
         </div>
         <button type="submit" className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3.5 rounded-xl hover:opacity-90 transition-opacity shadow-lg shadow-indigo-500/30 tracking-wide mt-2">
           Sign In
@@ -1074,7 +1228,7 @@ const SignUpScreen = ({ onSignUp, onSwitchToSignIn }: any) => {
 };
 
 export default function App() {
-  const [authView, setAuthView] = useState<'signin' | 'signup' | 'app'>('signin');
+  const [authView, setAuthView] = useState<'signin' | 'signup' | 'forgotPassword' | '400' | '404' | 'app'>('signin');
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isDark, setIsDark] = useState(false);
   const [userProfile, setUserProfile] = useState<any>({
@@ -1093,6 +1247,16 @@ export default function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [isDark]);
+
+  // Handle URL paths for 404/400
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path === '/400') {
+      setAuthView('400');
+    } else if (path === '/404' || (path !== '/' && !path.startsWith('/api'))) {
+      setAuthView('404');
+    }
+  }, []);
 
   const TABS = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -1122,7 +1286,7 @@ export default function App() {
         <SignInScreen onSignIn={(userData: any) => {
           setUserProfile(userData);
           setAuthView('app');
-        }} onSwitchToSignUp={() => setAuthView('signup')} />
+        }} onSwitchToSignUp={() => setAuthView('signup')} onSwitchToForgotPassword={() => setAuthView('forgotPassword')} />
       </div>
     );
   }
@@ -1135,6 +1299,33 @@ export default function App() {
           setUserProfile(profileData);
           setAuthView('app');
         }} onSwitchToSignIn={() => setAuthView('signin')} />
+      </div>
+    );
+  }
+
+  if (authView === 'forgotPassword') {
+    return (
+      <div className="min-h-screen font-sans selection:bg-indigo-500/30 text-slate-900 bg-slate-50 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-500">
+        <BackgroundBlobs />
+        <ForgotPasswordScreen onBackToSignIn={() => setAuthView('signin')} />
+      </div>
+    );
+  }
+
+  if (authView === '400') {
+    return (
+      <div className="min-h-screen font-sans selection:bg-indigo-500/30 text-slate-900 bg-slate-50 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-500">
+        <BackgroundBlobs />
+        <BadRequestScreen onBack={() => setAuthView('signin')} />
+      </div>
+    );
+  }
+
+  if (authView === '404') {
+    return (
+      <div className="min-h-screen font-sans selection:bg-indigo-500/30 text-slate-900 bg-slate-50 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-500">
+        <BackgroundBlobs />
+        <NotFoundScreen onBack={() => setAuthView('signin')} />
       </div>
     );
   }
