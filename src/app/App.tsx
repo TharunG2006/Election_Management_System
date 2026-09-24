@@ -7,7 +7,8 @@ import {
   User, Mail, Phone, Compass, Globe, MessageSquare, GraduationCap,
   Lock, Eye, EyeOff, LogOut, Megaphone, AlertCircle, HelpCircle,
   Download, Share2, ExternalLink, ShieldAlert, ListChecks, Undo2,
-  Sparkles, BookOpen, Info, Check, ArrowRight, UserPlus
+  Sparkles, BookOpen, Info, Check, ArrowRight, UserPlus,
+  Send, Save, Edit3, Trash2, Plus, RefreshCw, AlertTriangle, MailCheck, Loader2, X
 } from 'lucide-react';
 
 // === Constants & Authorized Role Categories ===
@@ -147,279 +148,1296 @@ const FormFieldLabel = ({ icon: Icon, label, required = true }: { icon: any, lab
 
 // === Phase 1: Announcement & Official Notification Screen ===
 
-const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply }: any) => {
+const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin, token, userProfile }: any) => {
   const [announcement, setAnnouncement] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showGazetteModal, setShowGazetteModal] = useState(false);
+  const [adminMode, setAdminMode] = useState<'manage' | 'preview'>('manage');
+  const [isSaving, setIsSaving] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailTargetMode, setEmailTargetMode] = useState<'all' | 'single'>('all');
+  const [singleRecipientEmail, setSingleRecipientEmail] = useState('');
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState<any>(null);
+  const [showLivePreviewModal, setShowLivePreviewModal] = useState(false);
+  const [previewHtmlContent, setPreviewHtmlContent] = useState<string>('');
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [smtpPass, setSmtpPass] = useState('');
+  const [smtpConfigured, setSmtpConfigured] = useState(false);
 
-  useEffect(() => {
-    fetch('http://localhost:5000/api/elections/announcement')
+  const handleLoadEmailPreview = async (formOverride?: any) => {
+    setLoadingPreview(true);
+    try {
+      const authToken = token || localStorage.getItem('ems_token');
+      const payload = formOverride || editForm;
+      const res = await fetch('http://localhost:5000/api/elections/announcement/email-preview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.html) {
+        setPreviewHtmlContent(data.html);
+        setShowLivePreviewModal(true);
+      } else {
+        alert("Failed to load email preview: " + (data.error || "Unknown"));
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error generating email preview");
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const [editForm, setEditForm] = useState<any>({
+    title: "Official Notification: Alumni Association Office Bearer Elections 2026",
+    notificationNumber: "AA/ELEC/2026/01",
+    description: "Nominations are hereby called for the positions of Office Bearers for the term 2026–2028. Published via the official Alumni portal at least one month prior to the AGM.",
+    publishedVia: "Official Alumni Website Portal",
+    status: "published",
+    electionYear: "2026",
+    electionDate: "2026-10-25",
+    electionStartTime: "10:00 AM",
+    electionEndTime: "04:00 PM",
+    agmDate: "2026-10-25T10:00:00.000Z",
+    nominationStartDate: "2026-09-12T00:00:00.000Z",
+    nominationDeadline: "2026-09-30T23:59:59.000Z",
+    scrutinyMeetingDate: "2026-10-05T14:00:00.000Z",
+    withdrawalDeadline: "2026-10-14T17:00:00.000Z",
+    finalListDate: "2026-10-18T10:00:00.000Z",
+    votingDateTime: "2026-10-25T10:00:00.000Z",
+    contactInfo: "",
+    emailSubject: "OFFICIAL NOTIFICATION: Alumni Association Office Bearer Elections 2026 – Call for Nominations [Ref: AA/ELEC/2026/01]",
+    emailIntro: "Notice is hereby formally given to all registered alumni members regarding the Alumni Association General Election for Executive Office Bearers for the 2026–2028 tenure.",
+    emailBody: "Nominations are hereby called for the positions of Office Bearers for the term 2026–2028. Published via the official Alumni portal at least one month prior to the AGM.",
+    emailCustomNotes: "",
+    emailSignOffAuthorized: "Alumni Election Commission",
+    emailSignOffApproved: "Patron & Principal"
+  });
+
+  const fetchAnnouncement = () => {
+    setLoading(true);
+    const authToken = token || localStorage.getItem('ems_token');
+    fetch('http://localhost:5000/api/elections/announcement', {
+      headers: {
+        ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+      }
+    })
       .then(res => res.json())
       .then(data => {
-        setAnnouncement(data);
+        const ann = data.announcement || data;
+        setAnnouncement(ann);
+        if (ann && typeof ann === 'object') {
+          const yr = ann.electionYear || "2026";
+          const notif = ann.notificationNumber || "AA/ELEC/2026/01";
+          const title = ann.title || "Alumni Association General Election 2026";
+          setEditForm({
+            title: ann.title || "",
+            notificationNumber: notif,
+            description: ann.description || "",
+            publishedVia: ann.publishedVia || "Official Alumni Website Portal",
+            status: ann.status || "published",
+            electionYear: yr,
+            electionDate: ann.electionDate || "2026-10-25",
+            electionStartTime: ann.electionStartTime || "10:00 AM",
+            electionEndTime: ann.electionEndTime || "04:00 PM",
+            agmDate: ann.agmDate || "2026-10-25T10:00:00.000Z",
+            nominationStartDate: ann.nominationStartDate || "2026-09-12T00:00:00.000Z",
+            nominationDeadline: ann.nominationDeadline || "2026-09-30T23:59:59.000Z",
+            scrutinyMeetingDate: ann.scrutinyMeetingDate || "2026-10-05T14:00:00.000Z",
+            withdrawalDeadline: ann.withdrawalDeadline || "2026-10-14T17:00:00.000Z",
+            finalListDate: ann.finalListDate || "2026-10-18T10:00:00.000Z",
+            votingDateTime: ann.votingDateTime || "2026-10-25T10:00:00.000Z",
+            contactInfo: ann.contactInfo || "",
+            emailSubject: ann.emailSubject || `OFFICIAL NOTIFICATION: ${title} – Call for Nominations [Ref: ${notif}]`,
+            emailIntro: ann.emailIntro || `Notice is hereby formally given to all registered alumni members regarding the Alumni Association General Election for Executive Office Bearers for the ${yr}–${Number(yr) + 2} tenure.`,
+            emailBody: ann.emailBody || ann.description || "Nominations are hereby called for the positions of Office Bearers for the term 2026–2028. Published via the official Alumni portal at least one month prior to the AGM.",
+            emailCustomNotes: ann.emailCustomNotes || "",
+            emailSignOffAuthorized: ann.emailSignOffAuthorized || "Alumni Election Commission",
+            emailSignOffApproved: ann.emailSignOffApproved || "Patron & Principal"
+          });
+        }
         setLoading(false);
       })
       .catch(err => {
         console.error(err);
         setLoading(false);
       });
-  }, []);
+  };
 
-  const timelineSteps = [
-    {
-      stage: "Stage 1",
-      title: "Call for Nominations",
-      desc: "Announced ≥ 1 Month prior to AGM",
-      date: "Sep 10, 2026",
-      status: "Active / Published",
-      active: true
-    },
-    {
-      stage: "Stage 2",
-      title: "Nomination Proposals",
-      desc: "Eligible members submit proposals (No self-nomination)",
-      date: "Sep 30, 2026",
-      status: "In Progress",
-      active: true
-    },
-    {
-      stage: "Stage 3",
-      title: "Scrutiny Committee Conclave",
-      desc: "Verification by Principal, Coordinators & Bearers",
-      date: "Oct 05, 2026",
-      status: "Scheduled",
-      active: false
-    },
-    {
-      stage: "Stage 4",
-      title: "Candidate Withdrawal Period",
-      desc: "Withdrawal window provided before final roll",
-      date: "Oct 07 - Oct 14, 2026",
-      status: "Scheduled",
-      active: false
-    },
-    {
-      stage: "Stage 5",
-      title: "Publication of Final List & AGM",
-      desc: "Certified ballot published; AGM election voting",
-      date: "Oct 25, 2026",
-      status: "AGM Conclave",
-      active: false
+  const fetchSmtpStatus = () => {
+    const authToken = token || localStorage.getItem('ems_token');
+    if (!authToken) return;
+    fetch('http://localhost:5000/api/elections/smtp-status', {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && typeof data.configured === 'boolean') {
+          setSmtpConfigured(data.configured);
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchAnnouncement();
+    fetchSmtpStatus();
+  }, [token]);
+
+  const handleSaveAnnouncement = async (overrideStatus?: 'published' | 'draft') => {
+    setIsSaving(true);
+    const authToken = token || localStorage.getItem('ems_token');
+    const payload = {
+      ...editForm,
+      ...(overrideStatus ? { status: overrideStatus } : {})
+    };
+
+    try {
+      const res = await fetch('http://localhost:5000/api/elections/announcement', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAnnouncement(payload);
+        setEditForm(payload);
+        alert(overrideStatus === 'published' ? 'Announcement successfully published live to all alumni!' : overrideStatus === 'draft' ? 'Announcement set to draft mode (hidden from alumni).' : 'Announcement details saved successfully.');
+      } else {
+        alert(data.error || 'Failed to save announcement');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Network error saving announcement');
+    } finally {
+      setIsSaving(false);
     }
-  ];
+  };
+
+  const handleDeleteAnnouncement = async () => {
+    if (!confirm("Are you sure you want to delete and reset the current election announcement?")) return;
+    const authToken = token || localStorage.getItem('ems_token');
+    try {
+      const res = await fetch('http://localhost:5000/api/elections/announcement', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      if (res.ok) {
+        alert("Announcement reset.");
+        fetchAnnouncement();
+      } else {
+        alert("Failed to delete announcement.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error.");
+    }
+  };
+
+  const handleSendBroadcast = async () => {
+    if (emailTargetMode === 'single') {
+      const email = singleRecipientEmail.trim();
+      if (!email || !email.includes('@') || !email.includes('.')) {
+        alert("Please enter a valid recipient email address.");
+        return;
+      }
+    }
+
+    if (!smtpConfigured && !smtpPass.trim()) {
+      alert("Please enter your 16-character Gmail App Password to send live emails from muralisubbu11@gmail.com.");
+      return;
+    }
+
+    setIsBroadcasting(true);
+    const authToken = token || localStorage.getItem('ems_token');
+    try {
+      const bodyPayload: any = {
+        emailSubject: editForm.emailSubject,
+        emailIntro: editForm.emailIntro,
+        emailBody: editForm.emailBody,
+        emailCustomNotes: editForm.emailCustomNotes,
+        emailSignOffAuthorized: editForm.emailSignOffAuthorized,
+        emailSignOffApproved: editForm.emailSignOffApproved
+      };
+      if (emailTargetMode === 'single') {
+        bodyPayload.recipientEmail = singleRecipientEmail.trim();
+      }
+      if (smtpPass.trim()) {
+        bodyPayload.smtpPass = smtpPass.trim();
+      }
+
+      const res = await fetch('http://localhost:5000/api/elections/announcement/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify(bodyPayload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setBroadcastResult(data);
+        setSmtpConfigured(true);
+      } else {
+        alert(data.error || 'Failed to send announcement.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Network error while dispatching announcement email: ' + (err.message || ''));
+    } finally {
+      setIsBroadcasting(false);
+    }
+  };
+
+  const isPublished = announcement && announcement.status === 'published';
+
+  // Format date helper
+  const formatDateDisplay = (dateStr: string, fallback: string) => {
+    if (!dateStr) return fallback;
+    try {
+      return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return fallback;
+    }
+  };
+
+  // If alumni and not published, display clean read-only pending screen
+  if (!loading && !isAdmin && (!isPublished || !announcement)) {
+    return (
+      <div className="space-y-6 relative z-10 pb-20 max-w-3xl mx-auto text-center pt-8">
+        <div className="clay-card p-12 space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-sm">
+            <Megaphone size={32} />
+          </div>
+          <span className="px-3.5 py-1 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-mono text-xs font-bold rounded-full border border-amber-200 dark:border-amber-800">
+            OFFICIAL STATUS • PENDING PUBLICATION
+          </span>
+          <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Election Announcement Pending Publication
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-lg mx-auto">
+            The Alumni Election Commission has not yet formally published the official gazette notification for the forthcoming elections.
+          </p>
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+            Once certified and published, the complete election schedule, nomination deadline, and AGM date will appear here and will be broadcast to your registered email.
+          </div>
+          <div className="pt-2">
+            <button
+              onClick={onProceedToEligibility}
+              className="clay-btn px-6 py-3 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-500/20 inline-flex items-center gap-2"
+            >
+              <ClipboardCheck size={16} /> Evaluate Nominee Eligibility Meanwhile
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 relative z-10 pb-20">
-      {/* Official Banner */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass-panel p-8 md:p-10 border-l-8 border-indigo-600 relative overflow-hidden"
-      >
-        <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-6 relative z-10">
-          <div className="space-y-3 max-w-3xl">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="px-3.5 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 font-mono text-xs font-bold rounded-full tracking-wider border border-indigo-200 dark:border-indigo-700/50">
-                OFFICIAL NOTIFICATION • REF: AA/ELEC/2026/01
-              </span>
-              <span className="px-3 py-1 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-bold rounded-full flex items-center gap-1.5 border border-green-200 dark:border-green-800">
-                <span className="w-2 h-2 rounded-full bg-green-500 animate-ping" /> Call For Nominations Open
-              </span>
-              <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-full">
-                Strict: No Self-Nomination
-              </span>
-            </div>
-            <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Alumni Association Office Bearer Elections 2026
-            </h1>
-            <p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed">
-              In accordance with Article IV of the Alumni Association Constitution, nominations are hereby called for the positions of Office Bearers for the term 2026–2028. Published via the official Alumni portal <strong>at least one month prior to the forthcoming Annual General Meeting (AGM)</strong>.
-            </p>
-            <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 text-xs text-amber-800 dark:text-amber-300 font-medium flex items-center gap-2">
-              <Info size={16} className="text-amber-600 flex-shrink-0" />
-              <span><strong>Constitutional Rule:</strong> There is <strong>no self-nomination</strong>. A candidate can only be nominated when proposed by an eligible registered alumni member and seconded.</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-slate-500 dark:text-slate-400 pt-1">
-              <span className="flex items-center gap-1.5"><CalendarDays size={15} className="text-indigo-600" /> AGM Date: <strong>October 25, 2026 (10:00 AM)</strong></span>
-              <span className="flex items-center gap-1.5"><Megaphone size={15} className="text-indigo-600" /> Notification Published: <strong>September 10, 2026</strong></span>
-              <span className="flex items-center gap-1.5"><Clock size={15} className="text-indigo-600" /> Nomination Deadline: <strong>September 30, 2026</strong></span>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row lg:flex-col gap-3 flex-shrink-0">
-            <button
-              onClick={() => setShowGazetteModal(true)}
-              className="clay-btn px-6 py-3.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-50"
-            >
-              <FileText size={18} className="text-indigo-600" /> View Gazette Notice
-            </button>
-            <button
-              onClick={onProceedToApply}
-              className="clay-btn px-6 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
-            >
-              <UserPlus size={18} /> Propose a Candidate
-            </button>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Mandatory Statutory Rules Notice Card */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Admin Management Toolbar (Admin Only) */}
+      {isAdmin && (
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="clay-card p-6 md:p-8"
+          className="glass-panel p-5 border-l-4 border-purple-600 shadow-md space-y-4"
         >
-          <div className="flex items-center gap-3 mb-4">
-            <div className="clay-icon w-12 h-12 text-indigo-600 dark:text-indigo-400">
-              <ShieldCheck size={24} />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Statutory Election Framework</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Adopted as per the Alumni Association Bylaws</p>
-            </div>
-          </div>
-          <ul className="space-y-3.5 text-sm text-slate-700 dark:text-slate-300">
-            <li className="flex items-start gap-3">
-              <CheckCircle2 size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
-              <span><strong>Proposal-Driven Only:</strong> There is NO self-nomination. An alumni member must be proposed by an eligible member and seconded.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <CheckCircle2 size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
-              <span><strong>1-Month Announcement Window:</strong> Call for nominations announced at least 30 days prior to the AGM.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <CheckCircle2 size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
-              <span><strong>President Qualifying Requirement:</strong> Candidate must have served as an Office Bearer in the immediate preceding 5 years (2021–2026).</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <CheckCircle2 size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
-              <span><strong>Universal 1-Year Continuous Service:</strong> Nominee must have actively served for ≥ 1 year continuously without gap in past 5 years in an authorized role.</span>
-            </li>
-          </ul>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="clay-card p-6 md:p-8"
-        >
-          <div className="flex items-center gap-3 mb-4">
-            <div className="clay-icon w-12 h-12 text-purple-600 dark:text-purple-400">
-              <Users size={24} />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Constitutional Scrutiny Committee</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Decisions are final and binding on all nominations</p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            {[
-              { name: "Dr. K. S. Ramanathan", role: "Principal / Patron", note: "Head of Scrutiny Committee" },
-              { name: "Prof. S. Meenakshi", role: "Alumni Coordinator", note: "Convener & Returning Officer" },
-              { name: "Er. Ramesh Babu", role: "Incumbent President", note: "Office Bearer Representative" },
-              { name: "Er. Anita George", role: "Incumbent Secretary", note: "Office Bearer Representative" }
-            ].map((member, idx) => (
-              <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/40">
-                <div>
-                  <h4 className="text-sm font-bold text-slate-800 dark:text-white">{member.name}</h4>
-                  <p className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">{member.role}</p>
+          <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shadow-md shadow-purple-500/25 flex-shrink-0">
+                <ShieldCheck size={22} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-slate-900 dark:text-white text-base">Announcement Management & Broadcast Console</h3>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-extrabold flex items-center gap-1.5 border ${
+                    editForm.status === 'published' 
+                      ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-300' 
+                      : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-300'
+                  }`}>
+                    {editForm.status === 'published' ? <CheckCircle2 size={12} /> : <Clock size={12} />}
+                    {editForm.status === 'published' ? 'Live: Visible to Alumni' : 'Draft: Hidden from Alumni'}
+                  </span>
                 </div>
-                <span className="text-[11px] font-semibold px-2.5 py-1 bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-md border border-slate-200 dark:border-slate-600">
-                  {member.note}
-                </span>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      </div>
-
-      {/* Interactive 5-Stage Election Process Tracker */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-        className="clay-card p-8"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white">Official 5-Phase Election Lifecycle</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Step-by-step progression from announcement to final contestant publication</p>
-          </div>
-          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 w-fit">
-            Phase 1 & 2 Active
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          {timelineSteps.map((step, idx) => (
-            <div key={idx} className="relative flex flex-col justify-between p-5 rounded-2xl bg-white/70 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 hover:shadow-lg transition-shadow">
-              <div className="space-y-2">
-                <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
-                  {step.stage}
-                </span>
-                <h4 className="text-base font-bold text-slate-900 dark:text-white">{step.title}</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400">{step.desc}</p>
-              </div>
-              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">{step.date}</span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  step.active ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                }`}>
-                  {step.status}
-                </span>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Manage election parameters, publish statutory notifications, or send broadcast emails to all alumni.
+                </p>
               </div>
             </div>
-          ))}
-        </div>
-      </motion.div>
 
-      {/* Gazette Notice Modal */}
+            {/* Mode switcher & primary actions */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl flex items-center border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setAdminMode('manage')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    adminMode === 'manage' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <Edit3 size={14} /> Edit & Manage
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminMode('preview')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    adminMode === 'preview' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <Eye size={14} /> Alumni View
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEmailTargetMode('all');
+                  setBroadcastResult(null);
+                  setShowEmailModal(true);
+                }}
+                className="clay-btn px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-purple-500/20"
+                title="Send official election announcement to all registered alumni members"
+              >
+                <Users size={14} /> Send to All Alumni
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEmailTargetMode('single');
+                  setBroadcastResult(null);
+                  setShowEmailModal(true);
+                }}
+                className="clay-btn px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/20"
+                title="Send official call for announcement to one single person"
+              >
+                <Send size={14} /> Send to Single Person
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSaveAnnouncement(editForm.status === 'published' ? 'draft' : 'published')}
+                disabled={isSaving}
+                className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 border transition-all ${
+                  editForm.status === 'published' 
+                    ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300' 
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300'
+                }`}
+              >
+                {editForm.status === 'published' ? <Clock size={14} /> : <CheckCircle2 size={14} />}
+                {editForm.status === 'published' ? 'Unpublish' : 'Publish Live'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSaveAnnouncement()}
+                disabled={isSaving}
+                className="clay-btn px-4 py-2 bg-indigo-600 text-white font-bold text-xs flex items-center gap-1.5"
+              >
+                <Save size={14} /> {isSaving ? 'Saving...' : 'Save Draft'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDeleteAnnouncement}
+                className="p-2 text-slate-400 hover:text-rose-600 transition-colors"
+                title="Reset to default announcement"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Admin Mode: Management Form */}
+      {isAdmin && adminMode === 'manage' ? (
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6"
+        >
+          <div className="clay-card p-6 md:p-8 space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Election Announcement Editor</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Modify complete statutory information, dates, rules, and publication status</p>
+              </div>
+              <span className="text-xs font-mono text-slate-400">Ref: {editForm.notificationNumber}</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+              <div className="md:col-span-2">
+                <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Official Election Title *</label>
+                <input
+                  type="text"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 dark:text-white font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Notification Reference Number *</label>
+                <input
+                  type="text"
+                  value={editForm.notificationNumber}
+                  onChange={(e) => setEditForm({ ...editForm, notificationNumber: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 dark:text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Election Year *</label>
+                <input
+                  type="text"
+                  value={editForm.electionYear}
+                  onChange={(e) => setEditForm({ ...editForm, electionYear: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Published Via *</label>
+                <input
+                  type="text"
+                  value={editForm.publishedVia}
+                  onChange={(e) => setEditForm({ ...editForm, publishedVia: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Publication Status *</label>
+                <select
+                  value={editForm.status}
+                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-800 dark:text-white font-bold"
+                >
+                  <option value="published">Published (Visible to all alumni)</option>
+                  <option value="draft">Draft (Restricted to Admin)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-1.5">
+                <CalendarDays size={16} className="text-indigo-600" /> Statutory Milestone Schedule & Deadlines
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 text-xs">
+                <div>
+                  <label className="font-semibold text-slate-600 dark:text-slate-400 block mb-1">AGM Date</label>
+                  <input
+                    type="date"
+                    value={(editForm.agmDate || '').substring(0, 10)}
+                    onChange={(e) => setEditForm({ ...editForm, agmDate: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-slate-800 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-600 dark:text-slate-400 block mb-1">Nomination Start Date</label>
+                  <input
+                    type="date"
+                    value={(editForm.nominationStartDate || '').substring(0, 10)}
+                    onChange={(e) => setEditForm({ ...editForm, nominationStartDate: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-slate-800 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-600 dark:text-slate-400 block mb-1">Nomination Deadline</label>
+                  <input
+                    type="date"
+                    value={(editForm.nominationDeadline || '').substring(0, 10)}
+                    onChange={(e) => setEditForm({ ...editForm, nominationDeadline: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-slate-800 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-600 dark:text-slate-400 block mb-1">Scrutiny Conclave Date</label>
+                  <input
+                    type="date"
+                    value={(editForm.scrutinyMeetingDate || '').substring(0, 10)}
+                    onChange={(e) => setEditForm({ ...editForm, scrutinyMeetingDate: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-slate-800 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-600 dark:text-slate-400 block mb-1">Candidate Withdrawal Deadline</label>
+                  <input
+                    type="date"
+                    value={(editForm.withdrawalDeadline || '').substring(0, 10)}
+                    onChange={(e) => setEditForm({ ...editForm, withdrawalDeadline: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-slate-800 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-600 dark:text-slate-400 block mb-1">Final Candidate List Publication</label>
+                  <input
+                    type="date"
+                    value={(editForm.finalListDate || '').substring(0, 10)}
+                    onChange={(e) => setEditForm({ ...editForm, finalListDate: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-slate-800 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-600 dark:text-slate-400 block mb-1">Voting Schedule / Hours</label>
+                  <input
+                    type="text"
+                    value={editForm.electionStartTime + " - " + editForm.electionEndTime}
+                    onChange={(e) => {
+                      const parts = e.target.value.split('-');
+                      setEditForm({ ...editForm, electionStartTime: parts[0]?.trim() || '', electionEndTime: parts[1]?.trim() || '' });
+                    }}
+                    placeholder="10:00 AM - 04:00 PM"
+                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-slate-800 dark:text-white"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+              <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1 text-xs">Official Constitutional Preamble / Notice Text *</label>
+              <textarea
+                rows={4}
+                value={editForm.description}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-3.5 text-sm text-slate-800 dark:text-white leading-relaxed"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setAdminMode('preview')}
+                className="px-5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1.5"
+              >
+                <Eye size={14} /> Preview Live Gazette
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSaveAnnouncement()}
+                disabled={isSaving}
+                className="clay-btn px-6 py-2.5 bg-indigo-600 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-indigo-500/25"
+              >
+                <Save size={15} /> {isSaving ? 'Saving Changes...' : 'Save Announcement Changes'}
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      ) : null}
+
+      {/* Gazette View (Shown to Alumni OR Admin in Preview Mode) */}
+      {(!isAdmin || adminMode === 'preview') && (
+        <div className="space-y-8">
+          {/* Official Banner */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="glass-panel p-8 md:p-10 border-l-8 border-indigo-600 relative overflow-hidden"
+          >
+            <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-6 relative z-10">
+              <div className="space-y-3 max-w-3xl">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="px-3.5 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 font-mono text-xs font-bold rounded-full tracking-wider border border-indigo-200 dark:border-indigo-700/50">
+                    OFFICIAL NOTIFICATION • REF: {announcement?.notificationNumber || "AA/ELEC/2026/01"}
+                  </span>
+                  <span className="px-3 py-1 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-bold rounded-full flex items-center gap-1.5 border border-green-200 dark:border-green-800">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-ping" /> Call For Nominations Open
+                  </span>
+                  <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs font-bold rounded-full">
+                    Strict: No Self-Nomination
+                  </span>
+                  {isAdmin && (
+                    <span className="px-2.5 py-0.5 bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 text-xs font-bold rounded-full border border-purple-300">
+                      Admin Preview Mode
+                    </span>
+                  )}
+                </div>
+                <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                  {announcement?.title || "Alumni Association Office Bearer Elections 2026"}
+                </h1>
+                <p className="text-base text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {announcement?.description || "Nominations are hereby called for the positions of Office Bearers for the term 2026–2028. Published via the official Alumni portal at least one month prior to the forthcoming Annual General Meeting (AGM)."}
+                </p>
+                <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 text-xs text-amber-800 dark:text-amber-300 font-medium flex items-center gap-2">
+                  <Info size={16} className="text-amber-600 flex-shrink-0" />
+                  <span><strong>Constitutional Rule:</strong> There is <strong>no self-nomination</strong>. A candidate can only be nominated when proposed by an eligible registered alumni member and seconded.</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-slate-500 dark:text-slate-400 pt-1">
+                  <span className="flex items-center gap-1.5"><CalendarDays size={15} className="text-indigo-600" /> AGM Date: <strong>{formatDateDisplay(announcement?.agmDate, 'October 25, 2026')}</strong></span>
+                  <span className="flex items-center gap-1.5"><CalendarDays size={15} className="text-indigo-600" /> Nomination Starts: <strong>{formatDateDisplay(announcement?.nominationStartDate, 'September 12, 2026')}</strong></span>
+                  <span className="flex items-center gap-1.5"><Clock size={15} className="text-indigo-600" /> Nomination Deadline: <strong>{formatDateDisplay(announcement?.nominationDeadline, 'September 30, 2026')}</strong></span>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row lg:flex-col gap-3 flex-shrink-0">
+                <button
+                  onClick={() => setShowGazetteModal(true)}
+                  className="clay-btn px-6 py-3.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-white font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-50"
+                >
+                  <FileText size={18} className="text-indigo-600" /> View Gazette Notice
+                </button>
+                <button
+                  onClick={onProceedToApply}
+                  className="clay-btn px-6 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
+                >
+                  <UserPlus size={18} /> Propose a Candidate
+                </button>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Mandatory Statutory Rules Notice Card */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="clay-card p-6 md:p-8"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="clay-icon w-12 h-12 text-indigo-600 dark:text-indigo-400">
+                  <ShieldCheck size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Statutory Election Framework</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Adopted as per the Alumni Association Bylaws</p>
+                </div>
+              </div>
+              <ul className="space-y-3.5 text-sm text-slate-700 dark:text-slate-300">
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
+                  <span><strong>Proposal-Driven Only:</strong> There is NO self-nomination. An alumni member must be proposed by an eligible member and seconded.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
+                  <span><strong>1-Month Announcement Window:</strong> Call for nominations announced at least 30 days prior to the AGM.</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
+                  <span><strong>President Qualifying Requirement:</strong> Candidate must have served as an Office Bearer in the immediate preceding 5 years (2021–2026).</span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <CheckCircle2 size={18} className="text-indigo-600 mt-0.5 flex-shrink-0" />
+                  <span><strong>Universal 1-Year Continuous Service:</strong> Nominee must have actively served for ≥ 1 year continuously without gap in past 5 years in an authorized role.</span>
+                </li>
+              </ul>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="clay-card p-6 md:p-8"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="clay-icon w-12 h-12 text-purple-600 dark:text-purple-400">
+                  <Award size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">Roles Open for Nominations</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Executive Office Bearers (Tenure 2026–2028)</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                {[
+                  { title: "1. President", posts: "1 Post", desc: "Requires Preceding 5-Yr Office Bearer Service" },
+                  { title: "2. Vice President", posts: "1 Post", desc: "Demonstrated Alumni Leadership & Active Standing" },
+                  { title: "3. Secretary", posts: "1 Post", desc: "Chapter or Club Coordination Experience" },
+                  { title: "4. Joint Secretary", posts: "1 Post", desc: "Active Standing with Coordinator Experience" },
+                  { title: "5. Treasurer", posts: "1 Post", desc: "Financial / Secretarial Verified Record" },
+                  { title: "6. Joint Treasurer", posts: "1 Post", desc: "Continuous Active Alumni Standing" }
+                ].map((pos, idx) => (
+                  <div key={idx} className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/40 flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800 dark:text-white">{pos.title}</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+                        {pos.posts}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                      {pos.desc}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Interactive 5-Stage Election Process Tracker */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="clay-card p-8"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Official 5-Phase Election Lifecycle</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Step-by-step progression from announcement to final contestant publication</p>
+              </div>
+              <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 w-fit">
+                Phase 1 & 2 Active
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              {[
+                { stage: "Stage 1", title: "Call for Nominations", desc: "Portal opens for candidate nominations", date: formatDateDisplay(announcement?.nominationStartDate, 'Sep 12, 2026'), status: "Active / Published", active: true },
+                { stage: "Stage 2", title: "Nomination Proposals", desc: "Eligible members submit proposals (No self-nomination)", date: formatDateDisplay(announcement?.nominationDeadline, 'Sep 30, 2026'), status: "In Progress", active: true },
+                { stage: "Stage 3", title: "Scrutiny Conclave", desc: "Formal verification of all filed proposals", date: formatDateDisplay(announcement?.scrutinyMeetingDate, 'Oct 05, 2026'), status: "Scheduled", active: false },
+                { stage: "Stage 4", title: "Candidate Withdrawal", desc: "Withdrawal window provided before final roll", date: formatDateDisplay(announcement?.withdrawalDeadline, 'Oct 14, 2026'), status: "Scheduled", active: false },
+                { stage: "Stage 5", title: "Final List & AGM", desc: "Certified ballot published; AGM voting", date: formatDateDisplay(announcement?.agmDate, 'Oct 25, 2026'), status: "AGM Conclave", active: false }
+              ].map((step, idx) => (
+                <div key={idx} className="relative flex flex-col justify-between p-5 rounded-2xl bg-white/70 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 hover:shadow-lg transition-shadow">
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
+                      {step.stage}
+                    </span>
+                    <h4 className="text-base font-bold text-slate-900 dark:text-white">{step.title}</h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{step.desc}</p>
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">{step.date}</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      step.active ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                    }`}>
+                      {step.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Announcement Delivery Modal: Broadcast to All or Send to Single Person */}
       <AnimatePresence>
-        {showGazetteModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+        {showEmailModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white dark:bg-slate-900 rounded-3xl p-8 max-w-2xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto"
+              className="bg-white dark:bg-slate-900 rounded-3xl p-7 max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-5"
             >
-              <div className="flex justify-between items-start border-b border-slate-200 dark:border-slate-800 pb-4">
-                <div>
-                  <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">OFFICIAL GAZETTE</span>
-                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-1">Election Notification 2026</h3>
-                  <p className="text-xs text-slate-500">Ref: AA/ELEC/2026/01 • Issued: September 10, 2026</p>
+              {!broadcastResult ? (
+                <>
+                  <div className="flex items-center gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                      emailTargetMode === 'single' 
+                        ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300' 
+                        : 'bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300'
+                    }`}>
+                      {emailTargetMode === 'single' ? <Mail size={20} /> : <Send size={20} />}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                        {emailTargetMode === 'single' ? 'Send Call for Announcement to Individual' : 'Broadcast Election Announcement'}
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        {emailTargetMode === 'single' ? 'Deliver official election notification directly to a specific person' : 'Official notification delivery to all registered alumni'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Segmented Mode Selector */}
+                  <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => setEmailTargetMode('all')}
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        emailTargetMode === 'all' 
+                          ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-white shadow-sm' 
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <Users size={14} /> Send to All Alumni
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEmailTargetMode('single')}
+                      className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        emailTargetMode === 'single' 
+                          ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-white shadow-sm' 
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <Mail size={14} /> Send to Single Person
+                    </button>
+                  </div>
+
+                  {/* Live Sender Identity Banner */}
+                  <div className="p-3.5 bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-2xl text-xs space-y-2">
+                    <div className="flex items-center justify-between font-bold text-blue-950 dark:text-blue-200">
+                      <span className="flex items-center gap-1.5"><Mail size={14} className="text-blue-600" /> Sender: <strong>muralisubbu11@gmail.com</strong></span>
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-blue-200/70 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-bold uppercase tracking-wider">
+                        {smtpConfigured ? '✓ Live Connected' : 'Google Auth Required'}
+                      </span>
+                    </div>
+
+                    {!smtpConfigured && (
+                      <div className="pt-2 border-t border-blue-200 dark:border-blue-800 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                            Gmail 16-Character App Password <span className="text-red-500">*</span>
+                          </label>
+                          <a
+                            href="https://myaccount.google.com/apppasswords"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] text-blue-600 hover:underline font-semibold"
+                          >
+                            Generate from Google &rarr;
+                          </a>
+                        </div>
+                        <input
+                          type="password"
+                          value={smtpPass}
+                          onChange={(e) => setSmtpPass(e.target.value)}
+                          placeholder="e.g. abcd efgh ijkl mnop"
+                          className="w-full bg-white dark:bg-slate-800 border border-blue-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                          Google requires an App Password to dispatch live emails via Gmail. Turn ON 2-Step Verification on your Google account, generate an App Password for Mail, and paste it here.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {emailTargetMode === 'single' ? (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                          Recipient Member Email Address <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="email"
+                            value={singleRecipientEmail}
+                            onChange={(e) => setSingleRecipientEmail(e.target.value)}
+                            placeholder="Enter recipient member's real email address"
+                            className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-3 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                            required
+                          />
+                          <Mail size={16} className="absolute right-3.5 top-3.5 text-slate-400" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                        <div className="p-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-bold text-indigo-950 dark:text-indigo-200">
+                              Broadcast Subject Line:
+                            </label>
+                            <span className="text-[10px] text-indigo-600 dark:text-indigo-400">Editable</span>
+                          </div>
+                          <input
+                            type="text"
+                            value={editForm.emailSubject}
+                            onChange={(e) => setEditForm({ ...editForm, emailSubject: e.target.value })}
+                            className="w-full bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white font-medium"
+                          />
+                        </div>
+                        <div className="space-y-1.5 text-slate-600 dark:text-slate-400">
+                          <p className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                            <ShieldCheck size={14} className="text-indigo-600" />
+                            Live Email Delivers Complete Official Information:
+                          </p>
+                          <ul className="list-disc pl-4 space-y-1">
+                            <li><strong>Sender:</strong> muralisubbu11@gmail.com (Official Alumni Election Commission)</li>
+                            <li><strong>All 6 Contested Roles:</strong> President, Vice President, Secretary, Joint Secretary, Treasurer, Joint Treasurer</li>
+                            <li><strong>Statutory Schedule:</strong> Nomination opening, deadline, scrutiny conclave, withdrawal, and voting hours</li>
+                            <li><strong>Nomination Rules:</strong> Strictly no self-nomination, proposer & seconder required, 5-yr President rule</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
+                      <p>
+                        You are about to broadcast live official election announcement emails from <strong>muralisubbu11@gmail.com</strong> to all registered alumni members (<code className="text-purple-600 dark:text-purple-400 font-bold">role = alumni</code>).
+                      </p>
+                      <div className="p-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-bold text-indigo-950 dark:text-indigo-200">
+                            Broadcast Subject Line:
+                          </label>
+                          <span className="text-[10px] text-indigo-600 dark:text-indigo-400">Editable</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={editForm.emailSubject}
+                          onChange={(e) => setEditForm({ ...editForm, emailSubject: e.target.value })}
+                          className="w-full bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white font-medium"
+                        />
+                      </div>
+                      <div className="space-y-1.5 text-slate-600 dark:text-slate-400">
+                        <p className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                          <ShieldCheck size={14} className="text-purple-600" />
+                          Complete Election Details Delivered to Every Member:
+                        </p>
+                        <ul className="list-disc pl-4 space-y-1">
+                          <li>Personalized to each alumnus's registered name, department, and class</li>
+                          <li>All 6 Executive Posts open for contest with candidate qualifications</li>
+                          <li>Complete statutory schedule from nomination opening to AGM results declaration</li>
+                          <li>Mandatory proposal rules (Strictly no self-nomination)</li>
+                          <li>Direct action button to access the Alumni Election Portal</li>
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      type="button"
+                      onClick={handleLoadEmailPreview}
+                      disabled={loadingPreview || isBroadcasting}
+                      className="px-3.5 py-2.5 rounded-xl border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/60 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 font-bold text-xs flex items-center gap-1.5 hover:bg-indigo-100 transition-colors"
+                    >
+                      {loadingPreview ? <RefreshCw size={13} className="animate-spin" /> : <Eye size={13} />}
+                      Preview Full Gazette Email
+                    </button>
+
+                    <div className="flex gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setShowEmailModal(false)}
+                        disabled={isBroadcasting}
+                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSendBroadcast}
+                        disabled={isBroadcasting}
+                        className="clay-btn px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-purple-500/25"
+                      >
+                        {isBroadcasting ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" /> Dispatching...
+                          </>
+                        ) : emailTargetMode === 'single' ? (
+                          <>
+                            <Send size={14} /> Send Official Gazette to Person
+                          </>
+                        ) : (
+                          <>
+                            <Users size={14} /> Confirm & Broadcast to All Alumni
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-center space-y-3 py-2">
+                    <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300 flex items-center justify-center mx-auto">
+                      <MailCheck size={28} />
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                      {broadcastResult.stats?.targetType === 'single' ? 'Announcement Successfully Dispatched!' : 'Broadcast Successfully Dispatched!'}
+                    </h3>
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                      {broadcastResult.message}
+                    </p>
+                  </div>
+
+                  {broadcastResult.stats?.targetType === 'single' ? (
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">From (Your Gmail):</span>
+                        <span className="font-bold text-slate-800 dark:text-white">muralisubbu11@gmail.com</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Recipient Member:</span>
+                        <span className="font-bold text-slate-800 dark:text-white">{broadcastResult.stats?.recipientEmail}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Status:</span>
+                        <span className="font-bold text-emerald-600">✓ Delivered to Real Mailbox</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Transport:</span>
+                        <span className="font-bold text-emerald-600 uppercase">Live Gmail SMTP</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-center">
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Alumni</span>
+                        <span className="text-lg font-bold text-slate-800 dark:text-white">{broadcastResult.stats?.totalAlumni || 0}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase font-semibold block">Real Emails Sent</span>
+                        <span className="text-lg font-bold text-emerald-600">{broadcastResult.stats?.sentCount || 0}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase font-semibold block">Sender</span>
+                        <span className="text-xs font-bold text-blue-600 dark:text-blue-400 mt-1 block">muralisubbu11@gmail.com</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowEmailModal(false);
+                        setBroadcastResult(null);
+                        setSingleRecipientEmail('');
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Live Email Gazette Preview Modal */}
+      <AnimatePresence>
+        {showLivePreviewModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-6 bg-slate-950/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl max-w-4xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+                    <Mail size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                      Live Gazette Email Preview
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
+                        100% Client Compatible
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Exact rendering delivered to alumni inboxes • Includes full schedule, 6 posts & rules
+                    </p>
+                  </div>
                 </div>
                 <button
-                  onClick={() => setShowGazetteModal(false)}
+                  type="button"
+                  onClick={() => setShowLivePreviewModal(false)}
                   className="clay-icon w-8 h-8 text-slate-500 hover:text-slate-800 dark:hover:text-white"
                 >
                   <XCircle size={20} />
                 </button>
               </div>
 
-              <div className="space-y-4 text-sm text-slate-700 dark:text-slate-300 font-serif leading-relaxed bg-slate-50 dark:bg-slate-800/40 p-6 rounded-2xl border border-slate-100 dark:border-slate-800">
-                <p>
-                  <strong>TO ALL REGISTERED ALUMNI MEMBERS:</strong> Notice is hereby given that the Biennial Elections for the Executive Office Bearers of the Alumni Association will take place during the Annual General Meeting (AGM) scheduled on <strong>Sunday, October 25, 2026 at 10:00 AM IST</strong>.
-                </p>
-                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs font-sans rounded-xl text-amber-900 dark:text-amber-300 font-semibold">
-                  MANDATORY: In accordance with Article IV, Section 2, there is NO self-nomination. Candidates must be proposed and seconded by eligible members of the Alumni Association.
+              <div className="flex-1 bg-slate-200 dark:bg-slate-950 p-2 sm:p-4 overflow-y-auto">
+                <div className="bg-white rounded-xl shadow-md overflow-hidden max-w-2xl mx-auto">
+                  <iframe
+                    title="Email Preview"
+                    srcDoc={previewHtmlContent}
+                    className="w-full h-[650px] border-0"
+                    sandbox="allow-same-origin allow-popups"
+                  />
                 </div>
-                <p>
-                  <strong>Positions Open for Nomination:</strong> President, Vice President, Secretary, Joint Secretary, Treasurer, Joint Treasurer.
-                </p>
-                <div className="border-l-2 border-indigo-500 pl-4 py-1 space-y-1 font-sans text-xs">
-                  <p><strong>1. President Eligibility:</strong> Must have served as an Office Bearer during the immediate preceding 5 years (2021–2026).</p>
-                  <p><strong>2. General Eligibility:</strong> Registered alumni member with at least 1 year continuous active service without gap in the past 5 years holding additional coordinator responsibilities.</p>
-                  <p><strong>3. Nomination:</strong> Must be proposed and seconded by eligible alumni, accompanied by a detailed Purpose Statement.</p>
-                  <p><strong>4. Scrutiny & Withdrawal:</strong> Scrutiny committee decision is final and binding. Candidates may withdraw nominations prior to October 14, 2026.</p>
+              </div>
+
+              <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
+                <div className="text-xs text-slate-500 flex items-center gap-1.5">
+                  <CheckCircle2 size={14} className="text-emerald-500" />
+                  Validated: Full letterhead, 6 contested positions, 9 timetable stages & security seals.
                 </div>
-                <p className="pt-2 text-xs font-sans text-slate-500">
-                  By Order of the Scrutiny Committee & Executive Council.<br />
-                  <strong>Prof. S. Meenakshi</strong>, Returning Officer & Alumni Coordinator
+                <button
+                  type="button"
+                  onClick={() => setShowLivePreviewModal(false)}
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs"
+                >
+                  Close Preview
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Gazette Notice Modal */}
+      <AnimatePresence>
+        {showGazetteModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 max-w-3xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-6 max-h-[92vh] overflow-y-auto"
+            >
+              {/* Official Gazette Letterhead */}
+              <div className="border-b-2 border-amber-500/80 pb-4 text-center space-y-1">
+                <div className="inline-block px-3 py-1 bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-mono text-[10px] font-extrabold tracking-widest uppercase rounded-full">
+                  Official Gazette Extraordinary
+                </div>
+                <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-wide uppercase">
+                  National Engineering College (Autonomous)
+                </h2>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Approved by AICTE • Affiliated to Anna University • K.R. Nagar, Kovilpatti - 628 503
                 </p>
+                <div className="pt-2">
+                  <h3 className="text-sm font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+                    Alumni Association (NECAA) • Election Commission
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                    Ref: {announcement?.notificationNumber || announcement?.referenceNumber || "NEC/ELEC/2026/001"} • Term 2026–2028
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-5 text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                {/* Convocation Clause */}
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-100 dark:border-slate-800 text-xs sm:text-sm">
+                  <p className="font-serif">
+                    <strong>FORMAL CONVOCATION:</strong> Notice is hereby officially promulgated to all registered alumni members that the Biennial General Elections for Executive Office Bearers for the <strong>2026–2028 tenure</strong> will take place in conjunction with the Annual General Meeting (AGM) on <strong>{formatDateDisplay(announcement?.agmDate, 'Sunday, October 25, 2026')}</strong>.
+                  </p>
+                </div>
+
+                {/* Statutory Rule Banner */}
+                <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs rounded-xl text-amber-900 dark:text-amber-300 font-medium space-y-1">
+                  <div className="font-extrabold uppercase tracking-wide flex items-center gap-1.5">
+                    <AlertTriangle size={15} className="text-amber-600" />
+                    Statutory Rule: Strict Proposal Workflow (No Self-Nomination)
+                  </div>
+                  <p className="opacity-95 leading-relaxed">
+                    Self-nominations are strictly invalid. Every nominee must be proposed and seconded by verified alumni members with a formal written Purpose Statement detailing leadership credentials.
+                  </p>
+                </div>
+
+                {/* Section 1: Positions Open */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 dark:text-white flex items-center justify-between">
+                    <span>1. Executive Positions Contested</span>
+                    <span className="text-[11px] font-mono text-indigo-600 dark:text-indigo-400">Tenure: 2026–2028</span>
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <div className="font-bold text-slate-900 dark:text-white">1. President (1 Post)</div>
+                      <div className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5 font-semibold">★ Mandatory: Must have served as Office Bearer in preceding 5 yrs (2021–2026)</div>
+                    </div>
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <div className="font-bold text-slate-900 dark:text-white">2. Vice President (1 Post)</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">Active standing with verified coordinator service</div>
+                    </div>
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <div className="font-bold text-slate-900 dark:text-white">3. Secretary (1 Post)</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">Active standing with chapter/club coordination</div>
+                    </div>
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <div className="font-bold text-slate-900 dark:text-white">4. Joint Secretary (1 Post)</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">Active standing with coordinator experience</div>
+                    </div>
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <div className="font-bold text-slate-900 dark:text-white">5. Treasurer (1 Post)</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">Active standing with financial/secretarial records</div>
+                    </div>
+                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <div className="font-bold text-slate-900 dark:text-white">6. Joint Treasurer (1 Post)</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">Active standing with verified alumni service</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: Complete 9-Stage Master Timetable */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-900 dark:text-white">
+                    2. Master Election Timetable & Deadlines
+                  </h4>
+                  <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
+                        <tr>
+                          <th className="p-2.5">Stage</th>
+                          <th className="p-2.5">Event</th>
+                          <th className="p-2.5 text-right">Prescribed Schedule (IST)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        <tr>
+                          <td className="p-2.5 font-bold text-slate-400">1</td>
+                          <td className="p-2.5 font-medium">Opening of Nominations Portal</td>
+                          <td className="p-2.5 text-right font-semibold text-blue-600 dark:text-blue-400">{formatDateDisplay(announcement?.nominationStartDate, 'September 12, 2026')} • 09:00 AM</td>
+                        </tr>
+                        <tr className="bg-red-50/50 dark:bg-red-950/20">
+                          <td className="p-2.5 font-bold text-red-600">2</td>
+                          <td className="p-2.5 font-bold text-red-600">Last Date for Submitting Nominations</td>
+                          <td className="p-2.5 text-right font-bold text-red-600">{formatDateDisplay(announcement?.nominationDeadline, 'September 30, 2026')} • 05:00 PM</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2.5 font-bold text-slate-400">3</td>
+                          <td className="p-2.5 font-medium">Scrutiny Conclave Date</td>
+                          <td className="p-2.5 text-right font-semibold">{formatDateDisplay(announcement?.scrutinyMeetingDate, 'October 05, 2026')} • 02:00 PM</td>
+                        </tr>
+                        <tr className="bg-amber-50/50 dark:bg-amber-950/20">
+                          <td className="p-2.5 font-bold text-amber-600">4</td>
+                          <td className="p-2.5 font-bold text-amber-700 dark:text-amber-400">Last Date for Candidature Withdrawal</td>
+                          <td className="p-2.5 text-right font-bold text-amber-700 dark:text-amber-400">{formatDateDisplay(announcement?.withdrawalDeadline, 'October 14, 2026')} • 05:00 PM</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2.5 font-bold text-slate-400">5</td>
+                          <td className="p-2.5 font-medium">Final List of Contesting Candidates</td>
+                          <td className="p-2.5 text-right font-semibold">{formatDateDisplay(announcement?.finalListDate, 'October 18, 2026')} • 10:00 AM</td>
+                        </tr>
+                        <tr className="bg-emerald-50/50 dark:bg-emerald-950/20">
+                          <td className="p-2.5 font-bold text-emerald-600">6</td>
+                          <td className="p-2.5 font-bold text-emerald-700 dark:text-emerald-400">Electronic Polling (Secret Ballot)</td>
+                          <td className="p-2.5 text-right font-bold text-emerald-700 dark:text-emerald-400">{formatDateDisplay(announcement?.electionDate, 'Sunday, October 25, 2026')} • 10:00 AM – 04:00 PM</td>
+                        </tr>
+                        <tr>
+                          <td className="p-2.5 font-bold text-slate-400">7</td>
+                          <td className="p-2.5 font-medium">AGM & Results Declaration</td>
+                          <td className="p-2.5 text-right font-bold">{formatDateDisplay(announcement?.agmDate, 'Sunday, October 25, 2026')} • 05:00 PM</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Section 3: Signatures & Authority */}
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex flex-col sm:flex-row justify-between gap-4">
+                  <div>
+                    <div className="font-bold text-slate-800 dark:text-white">Alumni Election Commission</div>
+                    <div className="text-[11px] opacity-75">National Engineering College Alumni Association (NECAA)</div>
+                  </div>
+                  <div className="sm:text-right">
+                    <div className="font-bold text-slate-800 dark:text-white">Principal & Patron</div>
+                    <div className="text-[11px] opacity-75">National Engineering College (Autonomous)</div>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-100 dark:bg-slate-800/80 rounded-xl text-center text-[11px] text-slate-500 dark:text-slate-400">
+                  National Engineering College, K.R. Nagar, Kovilpatti - 628 503
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-2">
@@ -431,12 +1449,11 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply }: any) =
                 </button>
                 <button
                   onClick={() => {
-                    alert("Official Gazette notification downloaded.");
-                    setShowGazetteModal(false);
+                    window.print();
                   }}
-                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm flex items-center gap-2"
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm flex items-center gap-2 shadow-md shadow-indigo-500/20"
                 >
-                  <Download size={16} /> Download Signed PDF
+                  <Download size={16} /> Print / Save Gazette
                 </button>
               </div>
             </motion.div>
@@ -534,7 +1551,7 @@ const EligibilityScreen = ({ onProceedToApply }: any) => {
             </div>
             {targetPosition === "President" && (
               <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1 font-medium">
-                <AlertCircle size={13} /> Strict Article II Rule: Nominee must have served as an Office Bearer in past 5 years.
+                <AlertCircle size={13} /> Strict Rule: Nominee must have served as an Office Bearer in past 5 years.
               </p>
             )}
           </div>
@@ -799,6 +1816,144 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
     department: "ECE"
   });
 
+  // Alumni database lookup states
+  const [isFetchingNominee, setIsFetchingNominee] = useState(false);
+  const [nomineeLookupStatus, setNomineeLookupStatus] = useState<{
+    found: boolean;
+    name?: string;
+    label?: string;
+    message?: string;
+  } | null>(null);
+
+  const [isFetchingSeconder, setIsFetchingSeconder] = useState(false);
+  const [seconderLookupStatus, setSeconderLookupStatus] = useState<{
+    found: boolean;
+    name?: string;
+    message?: string;
+  } | null>(null);
+
+  const fetchNomineeByEmail = async (emailToFetch: string) => {
+    const cleanEmail = (emailToFetch || '').trim();
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      return;
+    }
+    setIsFetchingNominee(true);
+    try {
+      const res = await fetch(`http://localhost:5000/api/alumni/lookup?email=${encodeURIComponent(cleanEmail)}`);
+      const data = await res.json();
+      if (res.ok && data.found && data.alumni) {
+        setNominee(prev => ({
+          ...prev,
+          name: data.alumni.name || prev.name,
+          phone: data.alumni.phone || prev.phone,
+          department: data.alumni.department || prev.department,
+          graduationYear: data.alumni.graduationYear || prev.graduationYear,
+          alumniId: data.alumni.alumniId || prev.alumniId
+        }));
+        setNomineeLookupStatus({
+          found: true,
+          name: data.alumni.name,
+          label: `${data.alumni.department ? data.alumni.department + ', ' : ''}${data.alumni.graduationYear ? 'Class of ' + data.alumni.graduationYear : ''}`
+        });
+        setFieldErrors(prev => {
+          const next = { ...prev };
+          delete next.email;
+          delete next.name;
+          delete next.phone;
+          delete next.department;
+          delete next.graduationYear;
+          return next;
+        });
+      } else {
+        setNomineeLookupStatus({
+          found: false,
+          message: 'Alumni data not found.'
+        });
+        setFieldErrors(prev => ({
+          ...prev,
+          email: 'Alumni data not found.'
+        }));
+      }
+    } catch (err) {
+      console.error("Nominee lookup error:", err);
+    } finally {
+      setIsFetchingNominee(false);
+    }
+  };
+
+  const fetchSeconderByEmail = async (emailToFetch: string) => {
+    const cleanEmail = (emailToFetch || '').trim();
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      return;
+    }
+    setIsFetchingSeconder(true);
+    try {
+      const res = await fetch(`http://localhost:5000/api/alumni/lookup?email=${encodeURIComponent(cleanEmail)}`);
+      const data = await res.json();
+      if (res.ok && data.found && data.alumni) {
+        setSeconder(prev => ({
+          ...prev,
+          name: data.alumni.name || prev.name,
+          email: data.alumni.email || cleanEmail,
+          alumniId: data.alumni.alumniId || prev.alumniId,
+          department: data.alumni.department || prev.department,
+          batch: data.alumni.graduationYear || prev.batch,
+          phone: data.alumni.phone || prev.phone
+        }));
+        setSeconderLookupStatus({
+          found: true,
+          name: data.alumni.name
+        });
+        setFieldErrors(prev => {
+          const next = { ...prev };
+          delete next.seconderEmail;
+          return next;
+        });
+      } else {
+        setSeconderLookupStatus({
+          found: false,
+          message: 'Alumni data not found.'
+        });
+        setFieldErrors(prev => ({
+          ...prev,
+          seconderEmail: 'Alumni data not found.'
+        }));
+      }
+    } catch (err) {
+      console.error("Seconder lookup error:", err);
+    } finally {
+      setIsFetchingSeconder(false);
+    }
+  };
+
+  // Debounced auto-fetch for nominee email
+  useEffect(() => {
+    if (!nominee.email) {
+      setNomineeLookupStatus(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (nominee.email.includes('@') && nominee.email.includes('.')) {
+        fetchNomineeByEmail(nominee.email);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [nominee.email]);
+
+  // Debounced auto-fetch for seconder email
+  useEffect(() => {
+    if (!seconder.email) {
+      setSeconderLookupStatus(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (seconder.email.includes('@') && seconder.email.includes('.')) {
+        fetchSeconderByEmail(seconder.email);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [seconder.email]);
+
   const [purposeStatement, setPurposeStatement] = useState(
     "I propose this candidate for election based on their verified service as an Office Bearer over the past four years. They have spearheaded alumni initiatives, mobilized student placement programs, and demonstrated outstanding commitment to our association."
   );
@@ -833,6 +1988,17 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
       return;
     }
 
+    const isPresidentCandidate = targetPositions.includes("President");
+    if (isPresidentCandidate && roleCategory !== "Office Bearer") {
+      const errMsg = "Ineligible for President";
+      setErrorMsg(errMsg);
+      setFieldErrors(prev => ({
+        ...prev,
+        roleCategory: errMsg
+      }));
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const res = await fetch('http://localhost:5000/api/applications', {
@@ -862,7 +2028,9 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
         const err = data.error || "Failed to submit nomination proposal";
         setErrorMsg(err);
         const errLower = err.toLowerCase();
-        if (errLower.includes("alumni data not found") || errLower.includes("no alumni found") || errLower.includes("alumni not found") || errLower.includes("email")) {
+        if (errLower.includes("seconder")) {
+          setFieldErrors({ seconderEmail: err });
+        } else if (errLower.includes("alumni data not found") || errLower.includes("no alumni found") || errLower.includes("alumni not found") || errLower.includes("email")) {
           setFieldErrors({ email: err });
         } else if (errLower.includes("name")) {
           setFieldErrors({ name: err });
@@ -902,23 +2070,53 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
 
       <div className="clay-card p-8 md:p-10">
         {isSubmitted ? (
-          <div className="flex flex-col items-center justify-center text-center py-12 space-y-4">
-            <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 text-green-600 rounded-full flex items-center justify-center">
-              <CheckCircle2 size={36} />
+          <div className="flex flex-col items-center justify-center text-center py-10 space-y-5">
+            <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 text-amber-600 rounded-full flex items-center justify-center shadow-lg shadow-amber-500/20">
+              <Mail size={34} />
             </div>
-            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Nomination Proposal Successfully Filed!</h3>
-            <p className="text-slate-600 dark:text-slate-300 max-w-md text-sm">
-              You have formally proposed <strong>{nominee.name}</strong> for the office of <strong>{targetPositions.join(", ")}</strong>. The application has been verified against the official alumni registry and transmitted to the <strong>Scrutiny Committee</strong>.
+            <div className="space-y-1">
+              <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                Awaiting Seconder Consent
+              </span>
+              <h3 className="text-2xl font-bold text-slate-900 dark:text-white pt-2">
+                Nomination Proposal Initiated!
+              </h3>
+            </div>
+            
+            <p className="text-slate-600 dark:text-slate-300 max-w-lg text-sm leading-relaxed">
+              You have initiated a nomination for <strong>{nominee.name}</strong> for the office of <strong>{targetPositions.join(", ")}</strong>.
             </p>
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-xs font-mono border border-slate-200 dark:border-slate-700">
-              Nominee: <strong>{nominee.name}</strong> • Proposer: <strong>{proposer.name}</strong> • Seconder: <strong>{seconder.name}</strong>
+
+            {/* Explanatory Callout Box */}
+            <div className="p-5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/60 max-w-lg text-left space-y-3">
+              <div className="flex items-start gap-3">
+                <ShieldCheck size={20} className="text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
+                <div className="text-xs text-slate-700 dark:text-slate-300 space-y-1">
+                  <p className="font-bold text-indigo-900 dark:text-indigo-200">
+                    Constitutional Seconding Notice Dispatched:
+                  </p>
+                  <p>
+                    An official email from the Election Commission has been dispatched to <strong>{seconder.name}</strong> at <code className="bg-white/80 dark:bg-slate-900 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-600 dark:text-indigo-300">{seconder.email}</code> asking for their willingness to be the seconding member.
+                  </p>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold pt-1">
+                    ⚠️ Strict Rule: The nomination will only be formally submitted to the Scrutiny Committee once they click "Accept". If they decline, the proposal will not be submitted.
+                  </p>
+                </div>
+              </div>
             </div>
-            <button
-              onClick={() => setIsSubmitted(false)}
-              className="mt-6 px-6 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors"
-            >
-              Propose Another Candidate
-            </button>
+
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-xs font-mono border border-slate-200 dark:border-slate-700">
+              Candidate: <strong>{nominee.name}</strong> • Proposer: <strong>{proposer.name}</strong> • Seconder: <strong>{seconder.name}</strong>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setIsSubmitted(false)}
+                className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors text-xs"
+              >
+                Propose Another Candidate
+              </button>
+            </div>
           </div>
         ) : (
           <form className="space-y-8" onSubmit={handleSubmit}>
@@ -985,25 +2183,46 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                 <div>
-                  <FormFieldLabel icon={Mail} label="Nominee Alumni Email" />
-                  <input
-                    type="email"
-                    value={nominee.email}
-                    onChange={(e) => {
-                      setNominee({ ...nominee, email: e.target.value });
-                      if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: '' });
-                    }}
-                    required
-                    className={`w-full bg-white dark:bg-slate-900 border rounded-xl p-3 text-slate-800 dark:text-white ${
-                      isSelfNomination || fieldErrors.email ? 'border-red-500 focus:ring-red-500' : 'border-slate-200 dark:border-slate-700'
-                    }`}
-                    placeholder="nominee@alumni.org"
-                  />
+                  <div className="flex items-center justify-between">
+                    <FormFieldLabel icon={Mail} label="Nominee Alumni Email" />
+                    {isFetchingNominee && (
+                      <span className="text-[10px] text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                        <Loader2 size={10} className="animate-spin" /> Fetching...
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="email"
+                      value={nominee.email}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setNominee({ ...nominee, email: val });
+                        if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: '' });
+                      }}
+                      onBlur={() => {
+                        if (nominee.email && nominee.email.includes('@')) {
+                          fetchNomineeByEmail(nominee.email);
+                        }
+                      }}
+                      required
+                      className={`w-full bg-white dark:bg-slate-900 border rounded-xl p-3 pr-9 text-slate-800 dark:text-white ${
+                        isSelfNomination || fieldErrors.email ? 'border-red-500 focus:ring-red-500' : 'border-slate-200 dark:border-slate-700'
+                      }`}
+                      placeholder="nominee@alumni.org"
+                    />
+                    {isFetchingNominee && (
+                      <Loader2 size={16} className="absolute right-3 top-3.5 animate-spin text-indigo-500" />
+                    )}
+                  </div>
                   {fieldErrors.email && (
                     <p className="text-red-600 dark:text-red-400 text-[11px] font-semibold mt-1">
                       ⚠️ {fieldErrors.email}
                     </p>
                   )}
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Type candidate's email to automatically pull their name, contact, department & batch from alumni registry.
+                  </p>
                 </div>
 
                 <div>
@@ -1108,7 +2327,21 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
                 <MultiSelectDropdown
                   options={ELECTION_POSITIONS}
                   selected={targetPositions}
-                  onChange={setTargetPositions}
+                  onChange={(newPositions) => {
+                    setTargetPositions(newPositions);
+                    if (newPositions.includes("President") && roleCategory !== "Office Bearer") {
+                      setFieldErrors(prev => ({
+                        ...prev,
+                        roleCategory: "Ineligible for President"
+                      }));
+                    } else if (!newPositions.includes("President")) {
+                      setFieldErrors(prev => {
+                        const next = { ...prev };
+                        delete next.roleCategory;
+                        return next;
+                      });
+                    }
+                  }}
                   placeholder="Select position(s)..."
                 />
               </div>
@@ -1118,13 +2351,40 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
                   <FormFieldLabel icon={Briefcase} label="Nominee's Qualifying Responsibility Role" />
                   <select
                     value={roleCategory}
-                    onChange={(e) => setRoleCategory(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-white"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setRoleCategory(val);
+                      if (targetPositions.includes("President") && val !== "Office Bearer") {
+                        setFieldErrors(prev => ({
+                          ...prev,
+                          roleCategory: "Ineligible for President"
+                        }));
+                      } else {
+                        setFieldErrors(prev => {
+                          const next = { ...prev };
+                          delete next.roleCategory;
+                          return next;
+                        });
+                      }
+                    }}
+                    className={`w-full bg-white dark:bg-slate-900 border rounded-xl px-4 py-3 text-slate-800 dark:text-white ${
+                      targetPositions.includes("President") && roleCategory !== "Office Bearer"
+                        ? "border-red-500 focus:ring-red-500"
+                        : "border-slate-200 dark:border-slate-700"
+                    }`}
                   >
                     {RESPONSIBILITY_CATEGORIES.map(c => (
-                      <option key={c.id} value={c.id}>{c.label}</option>
+                      <option key={c.id} value={c.id}>
+                        {c.label}
+                      </option>
                     ))}
                   </select>
+                  {targetPositions.includes("President") && roleCategory !== "Office Bearer" && (
+                    <div className="mt-2 p-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-xs flex items-center gap-1.5 font-semibold">
+                      <AlertCircle size={14} className="flex-shrink-0" />
+                      <span>Ineligible for President</span>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <FormFieldLabel icon={CalendarDays} label="Nominee's Unbroken Service (Years in past 5 yrs)" />
@@ -1154,45 +2414,108 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
             </div>
 
             {/* Section 4: Seconder Details */}
-            <div className="space-y-4">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                4. Seconded by Eligible Member
-              </span>
-
-              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-900/30 space-y-3">
-                <div className="flex items-center gap-2">
-                  <UserCheck size={16} className="text-purple-600" />
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-white">Seconder Information</h4>
+            <div className="bg-slate-50 dark:bg-slate-800/40 p-6 rounded-2xl border border-slate-200 dark:border-slate-700/50 space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 pb-2">
+                <div>
+                  <span className="text-xs font-bold text-slate-800 dark:text-white uppercase tracking-wider block">
+                    4. Seconded by Eligible Member
+                  </span>
+                  <p className="text-[11px] text-slate-500">Provide the details of the seconding alumni member (Cannot be proposer or nominee)</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-500 block mb-1">Seconder Full Name</label>
-                    <input
-                      type="text"
-                      value={seconder.name}
-                      onChange={(e) => setSeconder({ ...seconder, name: e.target.value })}
-                      required
-                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-white"
-                    />
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300">
+                  Seconding Member
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <FormFieldLabel icon={Mail} label="Seconder Alumni Email" />
+                    {isFetchingSeconder && (
+                      <span className="text-[10px] text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                        <Loader2 size={10} className="animate-spin" /> Fetching...
+                      </span>
+                    )}
                   </div>
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-500 block mb-1">Alumni ID / Reg No</label>
+                  <div className="relative">
                     <input
-                      type="text"
-                      value={seconder.alumniId}
-                      onChange={(e) => setSeconder({ ...seconder, alumniId: e.target.value })}
-                      required
-                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-500 block mb-1">Email Address</label>
-                    <input
-                      type="text"
+                      type="email"
                       value={seconder.email}
-                      onChange={(e) => setSeconder({ ...seconder, email: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSeconder({ ...seconder, email: val });
+                        if (fieldErrors.seconderEmail) setFieldErrors({ ...fieldErrors, seconderEmail: '' });
+                      }}
+                      onBlur={() => {
+                        if (seconder.email && seconder.email.includes('@')) {
+                          fetchSeconderByEmail(seconder.email);
+                        }
+                      }}
                       required
-                      className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-white"
+                      className={`w-full bg-white dark:bg-slate-900 border rounded-xl p-3 pr-9 text-slate-800 dark:text-white ${
+                        fieldErrors.seconderEmail ? 'border-red-500 focus:ring-red-500' : 'border-slate-200 dark:border-slate-700'
+                      }`}
+                      placeholder="seconder@alumni.org"
+                    />
+                    {isFetchingSeconder && (
+                      <Loader2 size={16} className="absolute right-3 top-3.5 animate-spin text-indigo-500" />
+                    )}
+                  </div>
+                  {fieldErrors.seconderEmail && (
+                    <p className="text-red-600 dark:text-red-400 text-[11px] font-semibold mt-1">
+                      ⚠️ {fieldErrors.seconderEmail}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Type seconder's email to automatically pull their name, contact, department & batch from alumni registry.
+                  </p>
+                </div>
+
+                <div>
+                  <FormFieldLabel icon={User} label="Seconder Full Name" />
+                  <input
+                    type="text"
+                    value={seconder.name}
+                    onChange={(e) => setSeconder({ ...seconder, name: e.target.value })}
+                    required
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-800 dark:text-white"
+                    placeholder="Seconder's legal name"
+                  />
+                </div>
+
+                <div>
+                  <FormFieldLabel icon={Phone} label="Seconder Contact Number" />
+                  <input
+                    type="tel"
+                    value={seconder.phone}
+                    onChange={(e) => setSeconder({ ...seconder, phone: e.target.value })}
+                    required
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-800 dark:text-white"
+                    placeholder="+91..."
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <FormFieldLabel icon={Compass} label="Department" />
+                    <input
+                      type="text"
+                      value={seconder.department}
+                      onChange={(e) => setSeconder({ ...seconder, department: e.target.value })}
+                      required
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-800 dark:text-white"
+                      placeholder="e.g. ECE"
+                    />
+                  </div>
+                  <div>
+                    <FormFieldLabel icon={CalendarDays} label="Graduation Year / Batch" />
+                    <input
+                      type="text"
+                      value={seconder.batch}
+                      onChange={(e) => setSeconder({ ...seconder, batch: e.target.value })}
+                      required
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-slate-800 dark:text-white"
+                      placeholder="e.g. 2014"
                     />
                   </div>
                 </div>
@@ -1216,7 +2539,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
                 placeholder="Detail why this member is being proposed for office: Their meaningful contributions to the alumni association, track record, vision, and leadership integrity..."
               />
               <p className="text-[11px] text-slate-500 mt-1">
-                The Scrutiny Committee evaluates this purpose statement to ensure candidates demonstrate meaningful contributions and uphold highest integrity.
+                This purpose statement is evaluated to ensure candidates demonstrate meaningful contributions and uphold highest integrity.
               </p>
             </div>
 
@@ -1230,7 +2553,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
                   className="w-4 h-4 text-indigo-600 rounded mt-0.5"
                 />
                 <span className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                  I solemnly affirm as an eligible registered alumni member that I am formally proposing <strong>{nominee.name || "the candidate"}</strong> with their consent, that all service records are unbroken without gap, and that we accept the decision of the Scrutiny Committee as <strong>final and binding</strong>.
+                  I solemnly affirm as an eligible registered alumni member that I am formally proposing <strong>{nominee.name || "the candidate"}</strong> with their consent, that all service records are unbroken without gap, and that we accept the official election decision as <strong>final and binding</strong>.
                 </span>
               </label>
             </div>
@@ -1250,7 +2573,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
                   : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed shadow-none'
               }`}
             >
-              {isSubmitting ? "Filing Nomination Proposal..." : "Submit Nomination Proposal to Scrutiny Committee"}
+              {isSubmitting ? "Filing Nomination Proposal..." : "Submit Nomination Proposal"}
             </button>
           </form>
         )}
@@ -1261,7 +2584,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
 
 // === Phase 4: Scrutiny Committee & Selection Process Screen ===
 
-const ScrutinyCommitteeScreen = () => {
+const ScrutinyCommitteeScreen = ({ token }: any) => {
   const [applications, setApplications] = useState<any[]>([]);
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -1278,10 +2601,19 @@ const ScrutinyCommitteeScreen = () => {
 
   const fetchApplications = () => {
     setLoading(true);
-    fetch(`http://localhost:5000/api/applications?status=${filter}`)
-      .then(res => res.json())
+    fetch(`http://localhost:5000/api/applications?status=${filter}`, {
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+    })
+      .then(res => {
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            console.warn("Unauthorized scrutiny access");
+          }
+        }
+        return res.json();
+      })
       .then(data => {
-        setApplications(data);
+        setApplications(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch(err => {
@@ -1294,11 +2626,39 @@ const ScrutinyCommitteeScreen = () => {
     fetchApplications();
   }, [filter]);
 
+  const [isDeletingNonApproved, setIsDeletingNonApproved] = useState(false);
+  const [confirmDeleteModal, setConfirmDeleteModal] = useState(false);
+
+  const handleClearRejectedAndWithdrawn = async () => {
+    setIsDeletingNonApproved(true);
+    try {
+      const res = await fetch('http://localhost:5000/api/applications/rejected-withdrawn', {
+        method: 'DELETE',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setConfirmDeleteModal(false);
+        fetchApplications();
+      } else {
+        alert(data.error || "Failed to clear rejected and withdrawn logs");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error while clearing logs");
+    } finally {
+      setIsDeletingNonApproved(false);
+    }
+  };
+
   const handleScrutinyDecision = async (id: string, status: 'approved' | 'rejected') => {
     try {
       const res = await fetch(`http://localhost:5000/api/applications/${id}/scrutiny`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({
           status,
           verifiedCriteria,
@@ -1312,7 +2672,8 @@ const ScrutinyCommitteeScreen = () => {
         setCommitteeRemarks('');
         fetchApplications();
       } else {
-        alert("Failed to record committee decision");
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.error || "Failed to record committee decision: Admin authorization required");
       }
     } catch (err) {
       console.error(err);
@@ -1330,7 +2691,7 @@ const ScrutinyCommitteeScreen = () => {
         <div className="space-y-2 max-w-3xl">
           <div className="flex items-center gap-2">
             <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-bold text-xs rounded-full uppercase tracking-wider">
-              ARTICLE IV CONCLAVE
+              SCRUTINY COMMITTEE CONCLAVE
             </span>
             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
               Constituted by Principal, Alumni Coordinator & Office Bearers
@@ -1356,7 +2717,7 @@ const ScrutinyCommitteeScreen = () => {
             <h3 className="font-bold text-lg text-slate-900 dark:text-white">Filed Nomination Proposals for Scrutiny</h3>
             <p className="text-xs text-slate-500">Examine nominee credentials, proposer/seconder authenticity, and integrity</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
             {[
               { id: 'all', label: 'All Proposals' },
               { id: 'pending', label: 'Pending Scrutiny' },
@@ -1376,6 +2737,16 @@ const ScrutinyCommitteeScreen = () => {
                 {tab.label}
               </button>
             ))}
+
+            <button
+              onClick={() => setConfirmDeleteModal(true)}
+              disabled={isDeletingNonApproved}
+              className="ml-auto sm:ml-2 px-3.5 py-1.5 rounded-full text-xs font-bold bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/40 dark:hover:bg-red-950/60 dark:text-red-400 border border-red-200 dark:border-red-800 flex items-center gap-1.5 transition-colors shadow-sm"
+              title="Clear rejected and withdrawn logs (keeps pending and approved)"
+            >
+              <Trash2 size={13} />
+              Clear Rejected & Withdrawn Logs
+            </button>
           </div>
         </div>
 
@@ -1471,16 +2842,44 @@ const ScrutinyCommitteeScreen = () => {
                   </div>
 
                   {/* Actions */}
-                  {app.status === 'pending' && (
-                    <div className="flex flex-col justify-center gap-3 min-w-[170px]">
+                  <div className="flex flex-col justify-center gap-2 min-w-[170px]">
+                    {app.status === 'pending' && (
                       <button
-                        onClick={() => setSelectedApp(app)}
-                        className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2"
+                        onClick={() => {
+                          setSelectedApp(app);
+                          setCommitteeRemarks('');
+                        }}
+                        className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-colors"
                       >
                         <ListChecks size={16} /> Scrutinize Proposal
                       </button>
-                    </div>
-                  )}
+                    )}
+
+                    {app.status === 'approved' && (
+                      <button
+                        onClick={() => {
+                          setSelectedApp(app);
+                          setCommitteeRemarks(app.scrutinyDetails?.committeeRemarks || '');
+                        }}
+                        className="px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/40 dark:hover:bg-red-950/60 dark:text-red-400 font-bold text-xs rounded-xl border border-red-200 dark:border-red-800 flex items-center justify-center gap-2 transition-colors shadow-sm"
+                        title="Re-evaluate and reject this approved proposal"
+                      >
+                        <XCircle size={16} /> Reject Approved Proposal
+                      </button>
+                    )}
+
+                    {app.status === 'rejected' && (
+                      <button
+                        onClick={() => {
+                          setSelectedApp(app);
+                          setCommitteeRemarks(app.scrutinyDetails?.committeeRemarks || '');
+                        }}
+                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <RefreshCw size={14} /> Re-scrutinize
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -1491,77 +2890,168 @@ const ScrutinyCommitteeScreen = () => {
       {/* Scrutiny Decision Modal */}
       <AnimatePresence>
         {selectedApp && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+          <div
+            onClick={() => setSelectedApp(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto"
+          >
             <motion.div
+              onClick={(e) => e.stopPropagation()}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white dark:bg-slate-900 rounded-3xl p-8 max-w-xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-6"
+              className="bg-white dark:bg-slate-900 rounded-3xl max-w-xl w-full max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-800 shadow-2xl relative my-auto overflow-hidden"
             >
-              <div className="flex justify-between items-start border-b border-slate-200 dark:border-slate-800 pb-4">
+              {/* Sticky Header with prominent 'X' close button */}
+              <div className="p-6 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm sticky top-0 z-20 flex justify-between items-start">
                 <div>
                   <span className="text-xs font-bold text-purple-600 uppercase tracking-wider">OFFICIAL SCRUTINY PROCEEDING</span>
                   <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-1">Nominee: {selectedApp.name}</h3>
                   <p className="text-xs text-slate-500">Proposed by: {selectedApp.proposer?.name} • Position: {selectedApp.targetPositions?.join(", ")}</p>
                 </div>
-                <button onClick={() => setSelectedApp(null)} className="clay-icon w-8 h-8 text-slate-500 hover:text-slate-800">
-                  <XCircle size={20} />
+                <button
+                  type="button"
+                  onClick={() => setSelectedApp(null)}
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors flex-shrink-0"
+                  title="Close"
+                  aria-label="Close"
+                >
+                  <X size={20} />
                 </button>
               </div>
 
-              <div className="space-y-3">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                  Scrutiny Committee Checklist
-                </label>
-                {[
-                  "No Self-Nomination: Proposer is distinct and authenticated",
-                  "Nominee is Registered Alumni on Official Portal",
-                  "Nominee ≥ 1 Year Continuous Active Service Without Gap Verified",
-                  "Approved Additional Responsibility Role Verified",
-                  "President 5-Yr Bearer Rule Verified (if President)",
-                  "Proposer and Seconder Membership Authenticated",
-                  "Purpose Statement & Citation Confirms Meaningful Contributions"
-                ].map((crit, idx) => (
-                  <label key={idx} className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      defaultChecked
-                      className="w-4 h-4 text-purple-600 rounded"
-                    />
-                    <span>{crit}</span>
+              {/* Scrollable Content */}
+              <div className="p-6 space-y-5 overflow-y-auto flex-1">
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
+                    Scrutiny Committee Checklist
                   </label>
-                ))}
+                  {[
+                    "No Self-Nomination: Proposer is distinct and authenticated",
+                    "Nominee is Registered Alumni on Official Portal",
+                    "Nominee ≥ 1 Year Continuous Active Service Without Gap Verified",
+                    "Approved Additional Responsibility Role Verified",
+                    "President 5-Yr Bearer Rule Verified (if President)",
+                    "Proposer and Seconder Membership Authenticated",
+                    "Purpose Statement & Citation Confirms Meaningful Contributions"
+                  ].map((crit, idx) => (
+                    <label key={idx} className="flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        defaultChecked
+                        className="w-4 h-4 text-purple-600 rounded"
+                      />
+                      <span>{crit}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1">
+                    Committee Remarks / Observations
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={committeeRemarks}
+                    onChange={(e) => setCommitteeRemarks(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-800 dark:text-white resize-none"
+                    placeholder="Official finding of the Scrutiny Committee (decision is final and binding)..."
+                  />
+                </div>
+
+                <div className="p-3 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-xl text-[11px] text-purple-800 dark:text-purple-300">
+                  <strong>Notice:</strong> As stipulated by the election code, the decision of this Committee is final and binding on all candidates.
+                </div>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1">
-                  Committee Remarks / Observations
-                </label>
-                <textarea
-                  rows={3}
-                  value={committeeRemarks}
-                  onChange={(e) => setCommitteeRemarks(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-800 dark:text-white resize-none"
-                  placeholder="Official finding of the Scrutiny Committee (decision is final and binding)..."
-                />
+              {/* Footer with Close / Cancel, Reject, and Approve buttons */}
+              <div className="p-4 sm:p-6 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/70 flex flex-col sm:flex-row gap-3 justify-end items-center">
+                <button
+                  type="button"
+                  onClick={() => setSelectedApp(null)}
+                  className="w-full sm:w-auto py-2.5 px-5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleScrutinyDecision(selectedApp._id, 'rejected')}
+                  className="w-full sm:w-auto py-2.5 px-5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-red-600/20 transition-colors flex items-center justify-center gap-2"
+                >
+                  <XCircle size={16} />
+                  {selectedApp.status === 'approved' ? 'Revoke & Reject Proposal' : 'Reject Proposal'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleScrutinyDecision(selectedApp._id, 'approved')}
+                  className="w-full sm:w-auto py-2.5 px-5 bg-green-600 hover:bg-green-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-green-600/20 transition-colors flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 size={16} />
+                  {selectedApp.status === 'approved' ? 'Keep Approved' : 'Pass Scrutiny & Approve'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirm Delete Rejected & Withdrawn Logs Modal */}
+      <AnimatePresence>
+        {confirmDeleteModal && (
+          <div
+            onClick={() => setConfirmDeleteModal(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
+          >
+            <motion.div
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-md w-full border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-3 text-red-600">
+                  <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-950/50 flex items-center justify-center flex-shrink-0">
+                    <Trash2 size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">Clear Rejected & Withdrawn Logs</h3>
+                    <p className="text-xs text-slate-500">Only removes rejected & withdrawn records</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteModal(false)}
+                  className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                >
+                  <X size={18} />
+                </button>
               </div>
 
-              <div className="p-3 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-xl text-[11px] text-purple-800 dark:text-purple-300">
-                <strong>Notice:</strong> As stipulated by the election code, the decision of this Committee is final and binding on all candidates.
-              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                This action will permanently delete all <strong>rejected</strong> and <strong>withdrawn</strong> nomination proposal records from the database. <strong>Pending proposals and approved candidates will be safely retained.</strong>
+              </p>
 
               <div className="flex gap-3 pt-2">
                 <button
-                  onClick={() => handleScrutinyDecision(selectedApp._id, 'rejected')}
-                  className="flex-1 py-3 bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/30 dark:hover:bg-red-950/50 font-bold text-xs rounded-xl border border-red-200 dark:border-red-800 transition-colors"
+                  type="button"
+                  onClick={() => setConfirmDeleteModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                 >
-                  Reject Proposal
+                  Cancel
                 </button>
                 <button
-                  onClick={() => handleScrutinyDecision(selectedApp._id, 'approved')}
-                  className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-green-600/20 transition-colors"
+                  type="button"
+                  onClick={handleClearRejectedAndWithdrawn}
+                  disabled={isDeletingNonApproved}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-lg shadow-red-600/20 transition-colors flex items-center justify-center gap-2"
                 >
-                  Pass Scrutiny & Approve
+                  {isDeletingNonApproved ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" /> Clearing...
+                    </>
+                  ) : (
+                    "Confirm & Clear"
+                  )}
                 </button>
               </div>
             </motion.div>
@@ -1580,7 +3070,8 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
   const [withdrawTarget, setWithdrawTarget] = useState<any>(null);
   const [withdrawalReason, setWithdrawalReason] = useState('');
   const [isWithdrawing, setIsWithdrawing] = useState(false);
-  const [nominationView, setNominationView] = useState<'proposed_by_me' | 'nominated_me'>('proposed_by_me');
+  const [nominationView, setNominationView] = useState<'proposed_by_me' | 'nominated_me' | 'seconded_by_me'>('proposed_by_me');
+  const [isProcessingConsent, setIsProcessingConsent] = useState<string | null>(null);
 
   const fetchMyApplications = () => {
     if (userProfile?.email) {
@@ -1588,7 +3079,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
       fetch(`http://localhost:5000/api/applications?email=${encodeURIComponent(userProfile.email)}&roleType=${nominationView}`)
         .then(res => res.json())
         .then(data => {
-          setApplications(data);
+          setApplications(Array.isArray(data) ? data : []);
           setLoading(false);
         })
         .catch(err => {
@@ -1603,6 +3094,28 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
   useEffect(() => {
     fetchMyApplications();
   }, [userProfile, nominationView]);
+
+  const handleSecondingConsent = async (applicationId: string, decision: 'accept' | 'decline') => {
+    setIsProcessingConsent(applicationId);
+    try {
+      const res = await fetch('http://localhost:5000/api/nominations/seconding-consent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId, decision })
+      });
+      if (res.ok) {
+        fetchMyApplications();
+      } else {
+        const d = await res.json();
+        alert(d.error || "Failed to update seconding consent");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error updating seconding consent");
+    } finally {
+      setIsProcessingConsent(null);
+    }
+  };
 
   const confirmWithdrawal = async () => {
     if (!withdrawTarget) return;
@@ -1637,7 +3150,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">My Election Nominations</h2>
           <p className="text-sm text-indigo-600 dark:text-indigo-300">
-            Track proposals you filed and proposals where you have been nominated for office.
+            Track proposals you filed, nominations where you are the candidate, and incoming seconding requests.
           </p>
         </div>
         <button 
@@ -1648,8 +3161,8 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
         </button>
       </div>
 
-      {/* Toggle View: Proposed by Me vs Where I am Nominated */}
-      <div className="flex gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+      {/* Toggle View: Proposed by Me vs Where I am Nominated vs Seconding Requests */}
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
         <button
           onClick={() => setNominationView('proposed_by_me')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -1670,6 +3183,16 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
         >
           Nominations Where I am the Candidate
         </button>
+        <button
+          onClick={() => setNominationView('seconded_by_me')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+            nominationView === 'seconded_by_me'
+              ? 'bg-teal-600 text-white shadow-md'
+              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+          }`}
+        >
+          <ShieldCheck size={14} /> Seconding Requests & Consents
+        </button>
       </div>
 
       {loading ? (
@@ -1684,93 +3207,173 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
           <p className="text-slate-700 dark:text-slate-300 font-semibold">
             {nominationView === 'proposed_by_me' 
               ? "You haven't proposed any candidates yet." 
-              : "No nominations proposing you have been filed yet."}
+              : nominationView === 'nominated_me'
+              ? "No nominations proposing you have been filed yet."
+              : "No seconding requests have been sent to you."}
           </p>
           <p className="text-xs text-slate-500 mt-1">
             {nominationView === 'proposed_by_me'
               ? "Click 'Propose a Candidate' to submit an eligible member's nomination."
-              : "When an eligible alumni member proposes you, the nomination record will appear here."}
+              : nominationView === 'nominated_me'
+              ? "When an eligible alumni member proposes you, the nomination record will appear here."
+              : "When an alumni member designates you as a seconder, the request will appear here for your consent."}
           </p>
         </div>
       ) : (
         <div className="space-y-4">
-          {applications.map((app: any) => (
-            <div key={app._id} className="clay-card p-6 md:p-8 space-y-4">
-              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
-                <div>
-                  <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
-                    NOMINATION ENTRY • {app.targetPositions?.join(', ')}
-                  </span>
-                  <h3 className="font-bold text-xl text-slate-900 dark:text-white">
-                    Nominee: {app.name}
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-2">
-                    <Clock size={14} /> Filed on {new Date(app.submittedAt).toLocaleDateString()}
-                  </p>
+          {applications.map((app: any) => {
+            const isPendingSeconding = app.status === 'pending_seconding' || app.seconderConsentStatus === 'pending';
+            const isSecondingDeclined = app.status === 'seconding_declined' || app.seconderConsentStatus === 'declined';
+            const isSecondingAccepted = app.seconderConsentStatus === 'accepted';
+
+            return (
+              <div key={app._id} className="clay-card p-6 md:p-8 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+                  <div>
+                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
+                      NOMINATION ENTRY • {app.targetPositions?.join(', ')}
+                    </span>
+                    <h3 className="font-bold text-xl text-slate-900 dark:text-white">
+                      Nominee: {app.name}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-2">
+                      <Clock size={14} /> Filed on {new Date(app.submittedAt || app.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className={`px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider
+                      ${app.status === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 border border-green-200 dark:border-green-800' : 
+                        app.status === 'withdrawn' ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-400' :
+                        app.status === 'rejected' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-800' : 
+                        isPendingSeconding ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
+                        isSecondingDeclined ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-800' :
+                        'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'}`}
+                    >
+                      {app.status === 'approved' ? '✓ Scrutiny Passed' : 
+                       isPendingSeconding ? '⏳ Seconder Consent Pending' :
+                       isSecondingDeclined ? '✕ Seconding Declined' :
+                       isSecondingAccepted && app.status === 'pending' ? '✓ Seconded • In Scrutiny' :
+                       app.status}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <span className={`px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider
-                    ${app.status === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 border border-green-200 dark:border-green-800' : 
-                      app.status === 'withdrawn' ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-400' :
-                      app.status === 'rejected' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-800' : 
-                      'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800'}`}
-                  >
-                    {app.status === 'approved' ? '✓ Scrutiny Passed' : app.status}
-                  </span>
+                {/* Proposer & Seconder Details */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="p-3 rounded-lg bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/30">
+                    <span className="font-bold text-indigo-600 dark:text-indigo-400 block mb-0.5">Proposed By:</span>
+                    <p className="font-bold text-slate-800 dark:text-slate-200">{app.proposer?.name || "N/A"}</p>
+                    <p className="text-slate-500 text-[11px]">{app.proposer?.email || app.proposerEmail}</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/30">
+                    <span className="font-bold text-purple-600 dark:text-purple-400 block mb-0.5">Seconded By:</span>
+                    <p className="font-bold text-slate-800 dark:text-slate-200">{app.seconder?.name || "N/A"}</p>
+                    <p className="text-slate-500 text-[11px]">{app.seconder?.email || app.seconderEmail || "N/A"}</p>
+                  </div>
                 </div>
+
+                {/* Seconder In-App Action Callout */}
+                {nominationView === 'seconded_by_me' && isPendingSeconding && (
+                  <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 space-y-3">
+                    <div className="flex items-start gap-2 text-xs text-amber-900 dark:text-amber-200 font-semibold">
+                      <AlertCircle size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">Your Affirmative Consent as Seconding Member is Required:</p>
+                        <p className="text-[11px] font-normal text-amber-800 dark:text-amber-300 mt-0.5">
+                          Under association election bylaws, this nomination proposal will only be submitted to the Scrutiny Committee once you confirm your willingness to second it.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 pt-1">
+                      <button
+                        disabled={isProcessingConsent === app._id}
+                        onClick={() => handleSecondingConsent(app._id, 'accept')}
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-green-600/20 flex items-center gap-1.5"
+                      >
+                        ✓ I Accept & Second Nomination
+                      </button>
+                      <button
+                        disabled={isProcessingConsent === app._id}
+                        onClick={() => handleSecondingConsent(app._id, 'decline')}
+                        className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all"
+                      >
+                        ✕ Decline
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {nominationView === 'seconded_by_me' && isSecondingAccepted && (
+                  <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-xl text-xs text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800 flex items-center gap-2">
+                    <CheckCircle2 size={16} className="text-green-600" />
+                    <span>You have accepted and seconded this nomination. It has been officially submitted to the Scrutiny Committee.</span>
+                  </div>
+                )}
+
+                {nominationView === 'seconded_by_me' && isSecondingDeclined && (
+                  <div className="p-3 bg-red-50 dark:bg-red-950/20 rounded-xl text-xs text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800 flex items-center gap-2">
+                    <XCircle size={16} className="text-red-600" />
+                    <span>You declined to second this nomination. In accordance with bylaws, the proposal was not submitted.</span>
+                  </div>
+                )}
+
+                {/* Proposer Status Notice */}
+                {nominationView === 'proposed_by_me' && isPendingSeconding && (
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-xl text-xs text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-2">
+                    <Clock size={16} className="text-amber-600 flex-shrink-0" />
+                    <span>
+                      An official statutory email was dispatched to <strong>{app.seconder?.name}</strong> ({app.seconder?.email || app.seconderEmail}). Waiting for their seconding consent before submission to Scrutiny Committee.
+                    </span>
+                  </div>
+                )}
+
+                {nominationView === 'proposed_by_me' && isSecondingDeclined && (
+                  <div className="p-3 bg-red-50 dark:bg-red-950/20 rounded-xl text-xs text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800 flex items-center gap-2">
+                    <XCircle size={16} className="text-red-600 flex-shrink-0" />
+                    <span>
+                      The designated seconder (<strong>{app.seconder?.name}</strong>) declined to second this nomination. The proposal was not submitted.
+                    </span>
+                  </div>
+                )}
+
+                {app.purposeStatement && (
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl text-xs text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800">
+                    <span className="font-semibold text-slate-400 block mb-1">Filed Purpose Statement / Citation:</span>
+                    <p className="italic">"{app.purposeStatement}"</p>
+                  </div>
+                )}
+
+                {app.scrutinyDetails && (
+                  <div className="p-3 bg-purple-50 dark:bg-purple-950/20 rounded-xl text-xs text-purple-900 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                    <span className="font-bold block">Scrutiny Committee Finding:</span>
+                    <p>{app.scrutinyDetails.committeeRemarks}</p>
+                  </div>
+                )}
+
+                {/* Withdrawal Option Section */}
+                {app.status !== 'withdrawn' && app.status !== 'rejected' && app.status !== 'pending_seconding' && app.status !== 'seconding_declined' && (
+                  <div className="pt-2 flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-t border-slate-100 dark:border-slate-800">
+                    <span className="text-xs text-slate-500">
+                      Candidate withdrawal window is open until <strong>October 14, 2026</strong>.
+                    </span>
+                    <button
+                      onClick={() => setWithdrawTarget(app)}
+                      className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/30 dark:hover:bg-red-950/50 text-xs font-bold rounded-xl border border-red-200 dark:border-red-800 transition-colors flex items-center gap-1.5 w-fit"
+                    >
+                      <Undo2 size={14} /> Withdraw Nomination
+                    </button>
+                  </div>
+                )}
+
+                {app.status === 'withdrawn' && (
+                  <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs text-slate-600 dark:text-slate-400">
+                    <strong>Status:</strong> This nomination was withdrawn on {new Date(app.updatedAt || Date.now()).toLocaleDateString()}. Reason: {app.withdrawalReason || "Voluntary withdrawal"}.
+                  </div>
+                )}
               </div>
-
-              {/* Proposer & Seconder Details */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                <div className="p-3 rounded-lg bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/30">
-                  <span className="font-bold text-indigo-600 dark:text-indigo-400 block mb-0.5">Proposed By:</span>
-                  <p className="font-bold text-slate-800 dark:text-slate-200">{app.proposer?.name || "N/A"}</p>
-                  <p className="text-slate-500 text-[11px]">{app.proposer?.email || app.proposerEmail}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/30">
-                  <span className="font-bold text-purple-600 dark:text-purple-400 block mb-0.5">Seconded By:</span>
-                  <p className="font-bold text-slate-800 dark:text-slate-200">{app.seconder?.name || "N/A"}</p>
-                  <p className="text-slate-500 text-[11px]">{app.seconder?.email || "N/A"}</p>
-                </div>
-              </div>
-
-              {app.purposeStatement && (
-                <div className="p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl text-xs text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800">
-                  <span className="font-semibold text-slate-400 block mb-1">Filed Purpose Statement / Citation:</span>
-                  <p className="italic">"{app.purposeStatement}"</p>
-                </div>
-              )}
-
-              {app.scrutinyDetails && (
-                <div className="p-3 bg-purple-50 dark:bg-purple-950/20 rounded-xl text-xs text-purple-900 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                  <span className="font-bold block">Scrutiny Committee Finding:</span>
-                  <p>{app.scrutinyDetails.committeeRemarks}</p>
-                </div>
-              )}
-
-              {/* Withdrawal Option Section */}
-              {app.status !== 'withdrawn' && app.status !== 'rejected' && (
-                <div className="pt-2 flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-t border-slate-100 dark:border-slate-800">
-                  <span className="text-xs text-slate-500">
-                    Candidate withdrawal window is open until <strong>October 14, 2026</strong>.
-                  </span>
-                  <button
-                    onClick={() => setWithdrawTarget(app)}
-                    className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-950/30 dark:hover:bg-red-950/50 text-xs font-bold rounded-xl border border-red-200 dark:border-red-800 transition-colors flex items-center gap-1.5 w-fit"
-                  >
-                    <Undo2 size={14} /> Withdraw Nomination
-                  </button>
-                </div>
-              )}
-
-              {app.status === 'withdrawn' && (
-                <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs text-slate-600 dark:text-slate-400">
-                  <strong>Status:</strong> This nomination was withdrawn on {new Date(app.updatedAt || Date.now()).toLocaleDateString()}. Reason: {app.withdrawalReason || "Voluntary withdrawal"}.
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -1880,10 +3483,10 @@ const FinalCandidateListScreen = () => {
               Official Final List of Candidates
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-              Published in accordance with the election guidelines following formal scrutiny of all proposals by the Scrutiny Committee and completion of the withdrawal window. <strong>Decisions by the Scrutiny Committee are final and binding.</strong>
+              Published in accordance with the election guidelines following formal verification of all proposals and completion of the withdrawal window. <strong>Decisions are final and binding.</strong>
             </p>
             <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 pt-1">
-              <span>Certified by: <strong>Dr. K. S. Ramanathan (Principal) & Scrutiny Committee</strong></span>
+              <span>Certified by: <strong>Alumni Election Commission</strong></span>
             </div>
           </div>
 
@@ -1927,7 +3530,7 @@ const FinalCandidateListScreen = () => {
           </div>
           <h3 className="text-xl font-bold text-slate-800 dark:text-white">No Final Candidates Published Yet</h3>
           <p className="text-sm text-slate-500 max-w-md mt-1">
-            Nomination proposals are currently being verified by the Scrutiny Committee. The certified final contestant list will appear here once approved.
+            Nomination proposals are currently being verified. The certified final contestant list will appear here once approved.
           </p>
         </div>
       ) : (
@@ -1995,7 +3598,7 @@ const FinalCandidateListScreen = () => {
 
 // === Dashboard Screen ===
 
-const DashboardScreen = ({ onNavigate }: any) => {
+const DashboardScreen = ({ onNavigate, isAdmin, userProfile, token }: any) => {
   const [stats, setStats] = useState({
     total: 0,
     approved: 0,
@@ -2005,13 +3608,17 @@ const DashboardScreen = ({ onNavigate }: any) => {
   });
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/applications/stats')
-      .then(res => res.json())
-      .then(data => {
-        if (!data.error) setStats(data);
+    if (isAdmin) {
+      fetch('http://localhost:5000/api/applications/stats', {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       })
-      .catch(err => console.error("Failed to fetch stats from backend", err));
-  }, []);
+        .then(res => res.json())
+        .then(data => {
+          if (!data.error) setStats(data);
+        })
+        .catch(err => console.error("Failed to fetch stats from backend", err));
+    }
+  }, [isAdmin, token]);
 
   return (
     <div className="space-y-8 relative z-10">
@@ -2038,7 +3645,7 @@ const DashboardScreen = ({ onNavigate }: any) => {
           onClick={() => onNavigate('announcements')}
           className="px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl hover:bg-indigo-700 transition-colors flex items-center gap-1.5 w-fit"
         >
-          View Notice & Schedule <ChevronRight size={14} />
+          {isAdmin ? 'Manage Gazette Notice' : 'View Notice & Schedule'} <ChevronRight size={14} />
         </button>
       </motion.div>
 
@@ -2048,83 +3655,175 @@ const DashboardScreen = ({ onNavigate }: any) => {
         animate={{ opacity: 1, y: 0 }}
         className="glass-panel p-8 md:p-10"
       >
-        <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2 tracking-tight">
-          Alumni Election Management System 👋
-        </h1>
-        <p className="text-indigo-600 dark:text-indigo-300 text-sm">
-          Strict Proposal Workflow: Candidates are proposed by eligible members with seconders • Scrutiny Committee Conclave • Certified Final Ballot.
-        </p>
+        {isAdmin ? (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                  Admin Election Management Portal 👋
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-purple-600 text-white shadow-sm">
+                  ADMINISTRATOR
+                </span>
+              </div>
+              <p className="text-purple-700 dark:text-purple-300 text-sm font-medium">
+                Authenticated as {userProfile?.name || 'Murali Subbiah M'} ({userProfile?.email || 'muralisubbu11@gmail.com'}) • Full Election Governance & Scrutiny Panel Control
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => onNavigate('announcements')}
+                className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-xs rounded-xl shadow-md hover:opacity-95 flex items-center gap-2"
+              >
+                <Megaphone size={15} /> Manage Gazette
+              </button>
+              <button
+                onClick={() => onNavigate('scrutiny')}
+                className="px-4 py-2.5 bg-slate-900 dark:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-md hover:bg-slate-800 flex items-center gap-2"
+              >
+                <ShieldAlert size={15} /> Scrutiny Panel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                  Alumni Election Portal 👋
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-indigo-600 text-white shadow-sm">
+                  ALUMNI MEMBER
+                </span>
+              </div>
+              <p className="text-indigo-600 dark:text-indigo-300 text-sm">
+                Welcome, {userProfile?.name || 'Alumni Member'} • Review published announcements, evaluate nominee eligibility, and propose candidates.
+              </p>
+            </div>
+            <button
+              onClick={() => onNavigate('announcements')}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2 flex-shrink-0 w-fit"
+            >
+              <Megaphone size={15} /> Official Announcements
+            </button>
+          </div>
+        )}
       </motion.div>
 
-      {/* Metrics Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[
-          { label: 'Total Filed Proposals', value: stats.total, icon: Users, color: 'text-blue-500 dark:text-blue-400', glow: '' },
-          { label: 'Scrutiny Passed / Approved', value: stats.approved, icon: CheckCircle2, color: 'text-green-500 dark:text-green-400', glow: 'glow-green' },
-          { label: 'Pending Committee Review', value: stats.pending, icon: Clock, color: 'text-amber-500 dark:text-amber-400', glow: 'glow-amber' },
-          { label: 'Withdrawn / Rejected', value: (stats.rejected || 0) + (stats.withdrawn || 0), icon: XCircle, color: 'text-rose-500 dark:text-rose-400', glow: 'glow-red' },
-        ].map((stat, i) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 * (i + 1) }}
-            className={`clay-card p-6 flex items-center justify-between group hover:scale-[1.02] transition-transform ${stat.glow}`}
+      {/* Metrics Row - Only visible to Admin */}
+      {isAdmin && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[
+            { label: 'Total Filed Proposals', value: stats.total, icon: Users, color: 'text-blue-500 dark:text-blue-400', glow: '' },
+            { label: 'Scrutiny Passed / Approved', value: stats.approved, icon: CheckCircle2, color: 'text-green-500 dark:text-green-400', glow: 'glow-green' },
+            { label: 'Pending Committee Review', value: stats.pending, icon: Clock, color: 'text-amber-500 dark:text-amber-400', glow: 'glow-amber' },
+            { label: 'Withdrawn / Rejected', value: (stats.rejected || 0) + (stats.withdrawn || 0), icon: XCircle, color: 'text-rose-500 dark:text-rose-400', glow: 'glow-red' },
+          ].map((stat, i) => (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 * (i + 1) }}
+              className={`clay-card p-6 flex items-center justify-between group hover:scale-[1.02] transition-transform ${stat.glow}`}
+            >
+              <div>
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">{stat.label}</p>
+                <h3 className="text-3xl font-bold text-slate-900 dark:text-white">
+                  <AnimatedCounter value={stat.value} />
+                </h3>
+              </div>
+              <div className={`clay-icon w-12 h-12 ${stat.color}`}>
+                <stat.icon size={24} />
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      {/* Role-Specific Quick Links */}
+      {isAdmin ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div 
+            onClick={() => onNavigate('announcements')}
+            className="clay-card p-6 cursor-pointer hover:border-purple-500/50 transition-all group"
           >
-            <div>
-              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">{stat.label}</p>
-              <h3 className="text-3xl font-bold text-slate-900 dark:text-white">
-                <AnimatedCounter value={stat.value} />
-              </h3>
+            <div className="clay-icon w-12 h-12 text-purple-600 mb-4 group-hover:scale-110 transition-transform">
+              <Megaphone size={24} />
             </div>
-            <div className={`clay-icon w-12 h-12 ${stat.color}`}>
-              <stat.icon size={24} />
+            <h3 className="font-bold text-base text-slate-900 dark:text-white mb-1">Manage Announcements & Broadcast</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Create, edit, publish official gazettes, and broadcast announcements to all registered alumni via email.
+            </p>
+          </div>
+
+          <div 
+            onClick={() => onNavigate('scrutiny')}
+            className="clay-card p-6 cursor-pointer hover:border-indigo-500/50 transition-all group"
+          >
+            <div className="clay-icon w-12 h-12 text-indigo-600 mb-4 group-hover:scale-110 transition-transform">
+              <ShieldAlert size={24} />
             </div>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* 5-Step Process Quick Links */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div 
-          onClick={() => onNavigate('eligibility')}
-          className="clay-card p-6 cursor-pointer hover:border-indigo-500/50 transition-all group"
-        >
-          <div className="clay-icon w-12 h-12 text-indigo-600 mb-4 group-hover:scale-110 transition-transform">
-            <ClipboardCheck size={24} />
+            <h3 className="font-bold text-base text-slate-900 dark:text-white mb-1">Scrutiny Panel Committee</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Inspect filed nomination proposals, evaluate candidate bylaws adherence, and certify official approvals.
+            </p>
           </div>
-          <h3 className="font-bold text-base text-slate-900 dark:text-white mb-1">Evaluate Nominee Eligibility</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Check whether the alumni member you plan to propose satisfies the President 5-yr rule or 1-yr continuous service.
-          </p>
-        </div>
 
-        <div 
-          onClick={() => onNavigate('apply')}
-          className="clay-card p-6 cursor-pointer hover:border-purple-500/50 transition-all group"
-        >
-          <div className="clay-icon w-12 h-12 text-purple-600 mb-4 group-hover:scale-110 transition-transform">
-            <UserPlus size={24} />
+          <div 
+            onClick={() => onNavigate('finalList')}
+            className="clay-card p-6 cursor-pointer hover:border-emerald-500/50 transition-all group"
+          >
+            <div className="clay-icon w-12 h-12 text-emerald-600 mb-4 group-hover:scale-110 transition-transform">
+              <Award size={24} />
+            </div>
+            <h3 className="font-bold text-base text-slate-900 dark:text-white mb-1">Published Final Candidate Roll</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Review and manage certified election contestant list following formal scrutiny conclaves.
+            </p>
           </div>
-          <h3 className="font-bold text-base text-slate-900 dark:text-white mb-1">Propose a Candidate</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            No self-nomination: Propose an eligible alumni candidate, specify the seconder, and provide the purpose statement.
-          </p>
         </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div 
+            onClick={() => onNavigate('announcements')}
+            className="clay-card p-6 cursor-pointer hover:border-indigo-500/50 transition-all group"
+          >
+            <div className="clay-icon w-12 h-12 text-indigo-600 mb-4 group-hover:scale-110 transition-transform">
+              <Megaphone size={24} />
+            </div>
+            <h3 className="font-bold text-base text-slate-900 dark:text-white mb-1">Official Announcements</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Read certified election gazette notices, key statutory dates, rules, and election committee contacts.
+            </p>
+          </div>
 
-        <div 
-          onClick={() => onNavigate('finalList')}
-          className="clay-card p-6 cursor-pointer hover:border-emerald-500/50 transition-all group"
-        >
-          <div className="clay-icon w-12 h-12 text-emerald-600 mb-4 group-hover:scale-110 transition-transform">
-            <Award size={24} />
+          <div 
+            onClick={() => onNavigate('eligibility')}
+            className="clay-card p-6 cursor-pointer hover:border-indigo-500/50 transition-all group"
+          >
+            <div className="clay-icon w-12 h-12 text-indigo-600 mb-4 group-hover:scale-110 transition-transform">
+              <ClipboardCheck size={24} />
+            </div>
+            <h3 className="font-bold text-base text-slate-900 dark:text-white mb-1">Evaluate Nominee Eligibility</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Check whether the alumni member you plan to propose satisfies the President 5-yr rule or 1-yr continuous service.
+            </p>
           </div>
-          <h3 className="font-bold text-base text-slate-900 dark:text-white mb-1">Published Final Candidate Roll</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            View certified candidates published by the Scrutiny Committee (Decisions final & binding).
-          </p>
+
+          <div 
+            onClick={() => onNavigate('apply')}
+            className="clay-card p-6 cursor-pointer hover:border-purple-500/50 transition-all group"
+          >
+            <div className="clay-icon w-12 h-12 text-purple-600 mb-4 group-hover:scale-110 transition-transform">
+              <UserPlus size={24} />
+            </div>
+            <h3 className="font-bold text-base text-slate-900 dark:text-white mb-1">Propose a Candidate</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              No self-nomination: Propose an eligible alumni candidate, specify the seconder, and provide the purpose statement.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
@@ -2141,7 +3840,7 @@ const ECScreen = ({ onNavigate }: any) => {
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">Executive Committee Panel</h2>
           <p className="text-sm text-purple-600 dark:text-purple-300">
-            Official election timetable, scrutiny governance, and returning officer dashboard.
+            Official election timetable, scrutiny governance, and election commission dashboard.
           </p>
         </div>
         <div className="clay-icon w-14 h-14 text-purple-600 hidden sm:flex">
@@ -2398,7 +4097,9 @@ const SignInScreen = ({ onSignIn, onSwitchToSignUp, onSwitchToForgotPassword }: 
           });
           const data = await res.json();
           if (res.ok) {
-            onSignIn(data);
+            const user = data.user || data;
+            const token = data.token || '';
+            onSignIn(user, token);
           } else {
             alert(data.error || 'Login failed');
           }
@@ -2419,16 +4120,12 @@ const SignInScreen = ({ onSignIn, onSwitchToSignUp, onSwitchToForgotPassword }: 
             </button>
           </div>
         </div>
-<<<<<<< HEAD
-        <button type="submit" className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3.5 rounded-xl hover:opacity-90 shadow-lg shadow-indigo-500/30 text-sm mt-2">
-=======
         <div className="flex justify-end mt-2">
           <button type="button" onClick={onSwitchToForgotPassword} className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
             Forgot Password?
           </button>
         </div>
         <button type="submit" className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3.5 rounded-xl hover:opacity-90 transition-opacity shadow-lg shadow-indigo-500/30 tracking-wide mt-2">
->>>>>>> 0c17282b276df119d6eb83d561d47392b04b6fd5
           Sign In
         </button>
       </form>
@@ -2475,7 +4172,9 @@ const SignUpScreen = ({ onSignUp, onSwitchToSignIn }: any) => {
             });
             const data = await res.json();
             if (res.ok) {
-              onSignUp(data);
+              const user = data.user || data;
+              const token = data.token || '';
+              onSignUp(user, token);
             } else {
               alert(data.error || 'Signup failed');
             }
@@ -2552,21 +4251,23 @@ const SignUpScreen = ({ onSignUp, onSwitchToSignIn }: any) => {
 // === Main Application Controller ===
 
 export default function App() {
-<<<<<<< HEAD
-  const [authView, setAuthView] = useState<'signin' | 'signup' | 'app'>('app');
-  const [activeTab, setActiveTab] = useState('apply');
-=======
-  const [authView, setAuthView] = useState<'signin' | 'signup' | 'forgotPassword' | '400' | '404' | 'app'>('signin');
-  const [activeTab, setActiveTab] = useState('dashboard');
->>>>>>> 0c17282b276df119d6eb83d561d47392b04b6fd5
-  const [isDark, setIsDark] = useState(false);
-  const [userProfile, setUserProfile] = useState<any>({
-    name: "Tharun G",
-    email: "tarun.ganapathi2007@gmail.com",
-    phone: "+91-8056300117",
-    department: "CSE",
-    graduationYear: "2015"
+  const [token, setToken] = useState<string>(() => localStorage.getItem('ems_token') || '');
+  const [userProfile, setUserProfile] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('ems_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   });
+  const [authView, setAuthView] = useState<'signin' | 'signup' | 'forgotPassword' | '400' | '404' | 'app'>(() => {
+    const saved = localStorage.getItem('ems_user');
+    return saved ? 'app' : 'signin';
+  });
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [isDark, setIsDark] = useState(false);
+
+  const isAdmin = userProfile?.role === 'admin';
 
   useEffect(() => {
     if (isDark) {
@@ -2576,66 +4277,159 @@ export default function App() {
     }
   }, [isDark]);
 
-  // Handle URL paths for 404/400
+  // Handle URL paths for 404/400 and protect /admin
   useEffect(() => {
     const path = window.location.pathname;
-    if (path === '/400') {
+    if (path === '/admin') {
+      if (!userProfile) {
+        setAuthView('signin');
+      } else if (!isAdmin) {
+        alert("403 Forbidden: Administrator role required to access /admin. Redirecting to your Alumni Dashboard.");
+        window.history.replaceState(null, '', '/');
+        setActiveTab('dashboard');
+        setAuthView('app');
+      } else {
+        window.history.replaceState(null, '', '/');
+        setActiveTab('dashboard');
+        setAuthView('app');
+      }
+    } else if (path === '/400') {
       setAuthView('400');
     } else if (path === '/404' || (path !== '/' && !path.startsWith('/api'))) {
       setAuthView('404');
     }
-  }, []);
+  }, [userProfile, isAdmin]);
 
-  const TABS = [
+  const handleLogout = () => {
+    localStorage.removeItem('ems_token');
+    localStorage.removeItem('ems_user');
+    setToken('');
+    setUserProfile(null);
+    setActiveTab('dashboard');
+    setAuthView('signin');
+  };
+
+  const handleAuthSuccess = (user: any, authToken: string) => {
+    setUserProfile(user);
+    setToken(authToken || '');
+    if (authToken) localStorage.setItem('ems_token', authToken);
+    if (user) localStorage.setItem('ems_user', JSON.stringify(user));
+    setActiveTab('dashboard');
+    setAuthView('app');
+  };
+
+  // Strictly segregated navigation tabs
+  const ALUMNI_TABS = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'announcements', label: 'Announcements', icon: Megaphone, badge: 'Phase 1' },
-    { id: 'eligibility', label: 'Eligibility Evaluator', icon: ClipboardCheck, badge: 'Phase 2' },
-    { id: 'apply', label: 'Propose Nominee', icon: UserPlus, badge: 'Phase 3' },
-    { id: 'scrutiny', label: 'Scrutiny Panel', icon: ShieldAlert, badge: 'Phase 4' },
-    { id: 'finalList', label: 'Final List', icon: Award, badge: 'Phase 5' },
-    { id: 'applications', label: 'My Nominations', icon: FolderOpen },
-    { id: 'ec', label: 'EC Timelines', icon: Users }
+    { id: 'announcements', label: 'Announcements', icon: Megaphone },
+    { id: 'eligibility', label: 'Eligibility Evaluator', icon: ClipboardCheck },
+    { id: 'apply', label: 'Propose Nominee', icon: UserPlus },
   ];
 
+  const ADMIN_TABS = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'announcements', label: 'Announcements', icon: Megaphone, badge: 'Gazette' },
+    { id: 'eligibility', label: 'Eligibility Evaluator', icon: ClipboardCheck },
+    { id: 'apply', label: 'Propose Nominee', icon: UserPlus },
+    { id: 'scrutiny', label: 'Scrutiny Panel', icon: ShieldAlert, badge: 'Admin' },
+    { id: 'finalList', label: 'Final List', icon: Award },
+    { id: 'applications', label: 'My Nominations', icon: FolderOpen },
+    { id: 'ec', label: 'EC Timelines', icon: Users, badge: 'Admin' }
+  ];
+
+  const currentTabs = isAdmin ? ADMIN_TABS : ALUMNI_TABS;
+
+  const handleTabChange = (tabId: string) => {
+    if (!isAdmin && ['scrutiny', 'finalList', 'applications', 'ec'].includes(tabId)) {
+      alert("403 Forbidden: Administrative permission required.");
+      setActiveTab('dashboard');
+      return;
+    }
+    setActiveTab(tabId);
+  };
+
   const renderContent = () => {
+    if (!isAdmin && ['scrutiny', 'finalList', 'applications', 'ec'].includes(activeTab)) {
+      return (
+        <div className="glass-panel p-8 text-center space-y-4 max-w-xl mx-auto my-12 border-red-200 dark:border-red-900/40">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-950/40 text-red-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+            <ShieldAlert size={32} />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white">403 Forbidden: Administrator Privilege Required</h2>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Your account is assigned the role of <strong>Alumni</strong>. Administrative sections such as Scrutiny Conclave, Final Candidate Certification, and EC Oversight are restricted strictly to designated election administrators.
+          </p>
+          <button 
+            onClick={() => setActiveTab('dashboard')}
+            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-colors"
+          >
+            Return to Alumni Dashboard
+          </button>
+        </div>
+      );
+    }
+
     switch (activeTab) {
       case 'dashboard': 
-        return <DashboardScreen onNavigate={(tab: string) => setActiveTab(tab)} />;
+        return (
+          <DashboardScreen 
+            isAdmin={isAdmin}
+            token={token}
+            userProfile={userProfile}
+            onNavigate={(tab: string) => handleTabChange(tab)} 
+          />
+        );
       case 'announcements': 
         return (
           <AnnouncementScreen 
-            onProceedToEligibility={() => setActiveTab('eligibility')} 
-            onProceedToApply={() => setActiveTab('apply')} 
+            isAdmin={isAdmin}
+            token={token}
+            userProfile={userProfile}
+            onProceedToEligibility={() => handleTabChange('eligibility')} 
+            onProceedToApply={() => handleTabChange('apply')} 
           />
         );
       case 'eligibility': 
         return (
           <EligibilityScreen 
-            onProceedToApply={() => setActiveTab('apply')} 
+            onProceedToApply={() => handleTabChange('apply')} 
           />
         );
       case 'apply': 
         return (
           <ApplyScreen 
             userProfile={userProfile} 
-            onNominationSuccess={() => setActiveTab('applications')} 
+            onNominationSuccess={() => {
+              if (isAdmin) {
+                handleTabChange('applications');
+              } else {
+                handleTabChange('dashboard');
+              }
+            }} 
           />
         );
       case 'scrutiny': 
-        return <ScrutinyCommitteeScreen />;
+        return <ScrutinyCommitteeScreen token={token} />;
       case 'finalList': 
         return <FinalCandidateListScreen />;
       case 'applications': 
         return (
           <MyApplicationsScreen 
             userProfile={userProfile} 
-            onProceedToApply={() => setActiveTab('apply')} 
+            onProceedToApply={() => handleTabChange('apply')} 
           />
         );
       case 'ec': 
-        return <ECScreen onNavigate={(tab: string) => setActiveTab(tab)} />;
+        return <ECScreen onNavigate={(tab: string) => handleTabChange(tab)} />;
       default: 
-        return <DashboardScreen onNavigate={(tab: string) => setActiveTab(tab)} />;
+        return (
+          <DashboardScreen 
+            isAdmin={isAdmin}
+            token={token}
+            userProfile={userProfile}
+            onNavigate={(tab: string) => handleTabChange(tab)} 
+          />
+        );
     }
   };
 
@@ -2643,20 +4437,11 @@ export default function App() {
     return (
       <div className="min-h-screen font-sans selection:bg-indigo-500/30 text-slate-900 bg-slate-50 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-500">
         <BackgroundBlobs />
-<<<<<<< HEAD
         <SignInScreen 
-          onSignIn={(userData: any) => {
-            setUserProfile(userData);
-            setAuthView('app');
-          }} 
+          onSignIn={(userData: any, authToken: string) => handleAuthSuccess(userData, authToken)} 
           onSwitchToSignUp={() => setAuthView('signup')} 
+          onSwitchToForgotPassword={() => setAuthView('forgotPassword')} 
         />
-=======
-        <SignInScreen onSignIn={(userData: any) => {
-          setUserProfile(userData);
-          setAuthView('app');
-        }} onSwitchToSignUp={() => setAuthView('signup')} onSwitchToForgotPassword={() => setAuthView('forgotPassword')} />
->>>>>>> 0c17282b276df119d6eb83d561d47392b04b6fd5
       </div>
     );
   }
@@ -2666,10 +4451,7 @@ export default function App() {
       <div className="min-h-screen font-sans selection:bg-indigo-500/30 text-slate-900 bg-slate-50 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-500">
         <BackgroundBlobs />
         <SignUpScreen 
-          onSignUp={(profileData: any) => {
-            setUserProfile(profileData);
-            setAuthView('app');
-          }} 
+          onSignUp={(profileData: any, authToken: string) => handleAuthSuccess(profileData, authToken)} 
           onSwitchToSignIn={() => setAuthView('signin')} 
         />
       </div>
@@ -2709,7 +4491,7 @@ export default function App() {
       
       {/* Top Navigation */}
       <nav className="sticky top-0 z-50 glass-panel !rounded-none !border-x-0 !border-t-0 px-6 py-3.5 flex items-center justify-between">
-        <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setActiveTab('dashboard')}>
+        <div className="flex items-center space-x-3 cursor-pointer" onClick={() => handleTabChange('dashboard')}>
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
             <Award className="text-white" size={20} />
           </div>
@@ -2723,16 +4505,23 @@ export default function App() {
         
         {/* Desktop Nav Items */}
         <div className="hidden xl:flex items-center space-x-1.5 bg-white/60 dark:bg-slate-900/60 p-1.5 rounded-full border border-slate-200 dark:border-white/10 shadow-sm backdrop-blur-md">
-          {TABS.map((tab) => (
+          {currentTabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               className={`relative px-4 py-2 rounded-full text-xs font-semibold transition-all flex items-center space-x-1.5 z-10 ${
                 activeTab === tab.id ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <tab.icon size={15} className={activeTab === tab.id ? 'text-indigo-600 dark:text-indigo-400' : ''} />
+              <tab.icon size={15} className={activeTab === tab.id ? (isAdmin ? 'text-purple-600 dark:text-purple-400' : 'text-indigo-600 dark:text-indigo-400') : ''} />
               <span>{tab.label}</span>
+              {tab.badge && (
+                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold uppercase tracking-wider ${
+                  tab.badge === 'Admin' ? 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-600'
+                }`}>
+                  {tab.badge}
+                </span>
+              )}
               {activeTab === tab.id && (
                 <motion.div
                   layoutId="activeTabPill"
@@ -2755,17 +4544,22 @@ export default function App() {
           </button>
           
           <div className="hidden sm:flex items-center space-x-2 pl-2 border-l border-slate-200 dark:border-slate-800 text-xs">
-            <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold flex items-center justify-center">
-              {userProfile.name?.[0] || 'A'}
+            <div className={`w-8 h-8 rounded-full ${isAdmin ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 ring-2 ring-purple-500/50' : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'} font-bold flex items-center justify-center`}>
+              {userProfile?.name?.[0] || (isAdmin ? 'M' : 'A')}
             </div>
             <div className="text-left leading-tight hidden md:block">
-              <span className="font-bold text-slate-800 dark:text-white block">{userProfile.name}</span>
-              <span className="text-[10px] text-slate-400 font-medium">Class of {userProfile.graduationYear}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-slate-800 dark:text-white block max-w-[140px] truncate">{userProfile?.name || (isAdmin ? 'Murali Subbiah M' : 'Alumni Member')}</span>
+                <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase ${isAdmin ? 'bg-purple-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'}`}>
+                  {isAdmin ? 'ADMIN' : 'ALUMNI'}
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-medium block max-w-[150px] truncate">{userProfile?.email}</span>
             </div>
           </div>
 
           <button 
-            onClick={() => setAuthView('signin')} 
+            onClick={handleLogout} 
             className="clay-icon w-9 h-9 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors" 
             title="Log Out"
           >
@@ -2791,18 +4585,26 @@ export default function App() {
       
       {/* Mobile nav */}
       <div className="xl:hidden fixed bottom-0 left-0 right-0 glass-panel !rounded-none !border-x-0 !border-b-0 px-2 py-2 flex justify-around z-50 overflow-x-auto">
-        {TABS.map((tab) => (
+        {currentTabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => handleTabChange(tab.id)}
             className={`flex flex-col items-center p-2 rounded-xl text-center min-w-[50px] transition-all ${
-              activeTab === tab.id ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-slate-500'
+              activeTab === tab.id ? (isAdmin ? 'text-purple-600 dark:text-purple-400 font-bold' : 'text-indigo-600 dark:text-indigo-400 font-bold') : 'text-slate-500'
             }`}
           >
             <tab.icon size={18} />
             <span className="text-[9px] mt-0.5 whitespace-nowrap">{tab.label.split(' ')[0]}</span>
           </button>
         ))}
+        <button
+          onClick={handleLogout}
+          className="flex flex-col items-center p-2 rounded-xl text-center min-w-[50px] transition-all text-red-500 hover:text-red-600"
+          title="Logout"
+        >
+          <LogOut size={18} />
+          <span className="text-[9px] mt-0.5 whitespace-nowrap">Logout</span>
+        </button>
       </div>
     </div>
   );
