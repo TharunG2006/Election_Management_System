@@ -345,6 +345,7 @@ function generateSeconderConsentEmail({
   targetPositions = [],
   roleCategory = '',
   purposeStatement = '',
+  nomineePhoto = null,
   consentToken = '',
   portalUrl = 'http://localhost:5173',
   apiBaseUrl = 'http://localhost:5000'
@@ -405,6 +406,12 @@ function generateSeconderConsentEmail({
         </h3>
         
         <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          ${nomineePhoto ? `
+          <tr>
+            <td colspan="2" style="padding: 0 0 16px 0; text-align: center;">
+              <img src="${nomineePhoto}" alt="Nominee Photo" width="88" height="104" style="width: 88px; height: 104px; object-fit: cover; border-radius: 8px; border: 2px solid #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,0.10); display: inline-block;" />
+            </td>
+          </tr>` : ''}
           <tr>
             <td style="padding: 6px 0; width: 35%; color: #64748b; font-weight: 600;">Position Proposing For:</td>
             <td style="padding: 6px 0; font-weight: 800; color: #1e1b4b; font-size: 14px;">${positionsStr}</td>
@@ -627,9 +634,311 @@ function generateSeconderConfirmationPage({
   `;
 }
 
+function generateNomineeConsentEmail({
+  proposer = {},
+  nominee = {},
+  seconder = {},
+  targetPositions = [],
+  roleCategory = '',
+  purposeStatement = '',
+  nomineePhoto = null,
+  consentToken = '',
+  portalUrl = 'http://localhost:5173',
+  apiBaseUrl = 'http://localhost:5000'
+}) {
+  const positionsStr = Array.isArray(targetPositions) ? targetPositions.join(', ') : (targetPositions || 'Office Bearer');
+  const acceptUrl = `${apiBaseUrl}/api/nominations/nominee-consent?token=${consentToken}&decision=accept`;
+  const declineUrl = `${apiBaseUrl}/api/nominations/nominee-consent?token=${consentToken}&decision=decline`;
+  const dispatchId = `NOMINEE-CONSENT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+  const subject = `Action Required: Nomination for ${positionsStr} – Do You Wish to Stand? [NEC Alumni Election 2026]`;
+
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 24px 10px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <div style="max-width: 650px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #cbd5e1; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08); overflow: hidden;">
+
+    <!-- HEADER -->
+    <div style="background: linear-gradient(135deg, #1e1b4b 0%, #7c3aed 60%, #a855f7 100%); padding: 28px 30px; text-align: center; color: #ffffff;">
+      <p style="margin: 0 0 6px 0; font-size: 11px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #e9d5ff;">
+        NATIONAL ENGINEERING COLLEGE ALUMNI ASSOCIATION (NECAA)
+      </p>
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: #ffffff;">
+        Election Commission • Nominee Consent Notice
+      </h1>
+      <p style="margin: 8px 0 0 0; font-size: 13px; color: #e9d5ff;">
+        Your Consent is Required to Stand in the Election
+      </p>
+    </div>
+
+    <!-- MAIN BODY -->
+    <div style="padding: 32px 30px; font-size: 14px; line-height: 1.6; color: #334155;">
+
+      <p style="margin: 0 0 16px 0; font-size: 15px; color: #0f172a;">
+        Dear <strong>${nominee.name || 'Alumni Member'}</strong>,
+      </p>
+
+      <p style="margin: 0 0 16px 0;">
+        You have been <strong>formally nominated</strong> as a candidate for the upcoming <strong>NEC Alumni Association General Election 2026</strong>. The nomination proposal has been filed by a fellow alumni member and has received the required seconding consent.
+      </p>
+
+      <!-- IMPORTANT NOTICE CALLOUT -->
+      <div style="background-color: #faf5ff; border-left: 4px solid #7c3aed; border-radius: 0 8px 8px 0; padding: 14px 18px; margin: 0 0 24px 0;">
+        <p style="margin: 0; font-size: 13px; color: #5b21b6; font-weight: 600;">
+          ⚖️ Constitutional Requirement: Under association election bylaws, your affirmative consent is mandatory before this nomination can be formally submitted to the Scrutiny Committee. You cannot be placed on the ballot without your explicit acceptance.
+        </p>
+      </div>
+
+      <!-- NOMINATION SUMMARY CARD -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+        <h3 style="margin: 0 0 14px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #7c3aed; font-weight: 800; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
+          Nomination Proposal Details
+        </h3>
+
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          ${nomineePhoto ? `
+          <tr>
+            <td colspan="2" style="padding: 0 0 16px 0; text-align: center;">
+              <img src="${nomineePhoto}" alt="Nominee Photo" width="88" height="104" style="width: 88px; height: 104px; object-fit: cover; border-radius: 8px; border: 2px solid #cbd5e1; box-shadow: 0 2px 8px rgba(0,0,0,0.10); display: inline-block;" />
+            </td>
+          </tr>` : ''}
+          <tr>
+            <td style="padding: 6px 0; width: 35%; color: #64748b; font-weight: 600;">Position Nominated For:</td>
+            <td style="padding: 6px 0; font-weight: 800; color: #1e1b4b; font-size: 14px;">${positionsStr}</td>
+          </tr>
+          ${roleCategory ? `
+          <tr>
+            <td style="padding: 6px 0; color: #64748b; font-weight: 600;">Qualifying Category:</td>
+            <td style="padding: 6px 0; color: #334155;">${roleCategory}</td>
+          </tr>` : ''}
+          <tr>
+            <td style="padding: 6px 0; color: #64748b; font-weight: 600;">Proposed By:</td>
+            <td style="padding: 6px 0; font-weight: 700; color: #0f172a;">
+              ${proposer.name || 'N/A'} <span style="font-weight: 400; color: #64748b;">(${proposer.email || ''})</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b; font-weight: 600;">Proposer Dept &amp; Batch:</td>
+            <td style="padding: 6px 0; color: #334155;">
+              ${proposer.department || ''} ${(proposer.batch || proposer.graduationYear) ? `(Class of ${proposer.batch || proposer.graduationYear})` : ''}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b; font-weight: 600;">Seconded By:</td>
+            <td style="padding: 6px 0; font-weight: 700; color: #0f172a;">
+              ${seconder.name || 'N/A'} <span style="font-weight: 400; color: #64748b;">(${seconder.email || ''})</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #64748b; font-weight: 600;">Seconder Status:</td>
+            <td style="padding: 6px 0; color: #16a34a; font-weight: 700;">✓ Affirmatively Consented</td>
+          </tr>
+        </table>
+
+        ${purposeStatement ? `
+        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed #cbd5e1;">
+          <span style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748b; display: block; margin-bottom: 4px;">
+            Proposer's Citation / Purpose Statement:
+          </span>
+          <p style="margin: 0; font-style: italic; color: #475569; font-size: 12px; line-height: 1.5; background: #ffffff; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0;">
+            "${purposeStatement}"
+          </p>
+        </div>` : ''}
+      </div>
+
+      <!-- ACTION QUESTION -->
+      <div style="text-align: center; margin: 30px 0 20px 0;">
+        <p style="font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 8px;">
+          Do you wish to stand as a candidate in the NEC Alumni Election 2026?
+        </p>
+        <p style="font-size: 12px; color: #64748b; margin-bottom: 20px;">
+          By accepting, your nomination will be formally submitted to the Election Scrutiny Committee for verification.
+        </p>
+
+        <table style="margin: 0 auto; border-collapse: separate; border-spacing: 12px 0;">
+          <tr>
+            <td>
+              <a href="${acceptUrl}" style="display: inline-block; background-color: #7c3aed; color: #ffffff; font-weight: 800; font-size: 14px; text-decoration: none; padding: 14px 28px; border-radius: 10px; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.35); text-align: center;">
+                ✓ YES, I ACCEPT THE NOMINATION
+              </a>
+            </td>
+            <td>
+              <a href="${declineUrl}" style="display: inline-block; background-color: #e2e8f0; color: #475569; font-weight: 700; font-size: 13px; text-decoration: none; padding: 14px 22px; border-radius: 10px; text-align: center;">
+                ✕ No, I Decline
+              </a>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <p style="font-size: 12px; color: #64748b; text-align: center; margin-top: 20px;">
+        You can also respond to this nomination by logging into the <a href="${portalUrl}" style="color: #7c3aed; text-decoration: underline; font-weight: 600;">Alumni Election Portal</a>.
+      </p>
+
+      <!-- SIGN OFF -->
+      <div style="margin-top: 32px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b;">
+        <p style="margin: 0; font-weight: 700; color: #1e1b4b;">Alumni Election Commission</p>
+        <p style="margin: 2px 0 0 0;">National Engineering College (Autonomous), Kovilpatti</p>
+        <p style="margin: 4px 0 0 0; font-family: monospace; font-size: 10px;">REF: ${dispatchId}</p>
+      </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <div style="background: #0f172a; padding: 16px 24px; text-align: center; color: #94a3b8; font-size: 11px;">
+      This email was generated automatically by the NEC Alumni Election Commission for registered alumni member ${nominee.email || ''}.
+    </div>
+
+  </div>
+</body>
+</html>
+  `;
+
+  return { subject, html };
+}
+
+function generateNomineeConfirmationPage({
+  success = true,
+  decision = 'accept',
+  nomineeName = '',
+  proposerName = '',
+  seconderName = '',
+  positions = [],
+  errorMessage = '',
+  portalUrl = 'http://localhost:5173'
+}) {
+  const positionsStr = Array.isArray(positions) ? positions.join(', ') : (positions || 'Office Bearer');
+  const isAccepted = decision === 'accept' || decision === 'accepted';
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${success ? (isAccepted ? 'Nomination Accepted' : 'Nomination Declined') : 'Verification Error'} – NEC Alumni Election</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 40px 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    .card {
+      max-width: 540px;
+      width: 100%;
+      background: #ffffff;
+      border-radius: 20px;
+      padding: 40px 32px;
+      text-align: center;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+      border: 1px solid #e2e8f0;
+    }
+    .icon {
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px auto;
+      font-size: 32px;
+    }
+    .icon-success { background: #f3e8ff; color: #7c3aed; }
+    .icon-declined { background: #fee2e2; color: #dc2626; }
+    .icon-error { background: #fef3c7; color: #d97706; }
+    h1 { margin: 0 0 10px 0; font-size: 24px; font-weight: 800; color: #0f172a; }
+    p { margin: 0 0 16px 0; font-size: 14px; line-height: 1.6; color: #475569; }
+    .details {
+      background: #f1f5f9;
+      border-radius: 12px;
+      padding: 16px;
+      margin: 20px 0;
+      text-align: left;
+      font-size: 13px;
+    }
+    .details p { margin: 4px 0; color: #334155; }
+    .details strong { color: #0f172a; }
+    .btn {
+      display: inline-block;
+      margin-top: 16px;
+      background: #7c3aed;
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 14px;
+      padding: 12px 28px;
+      border-radius: 12px;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #6d28d9; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    ${!success ? `
+      <div class="icon icon-error">⚠️</div>
+      <h1>Verification Error</h1>
+      <p>${errorMessage || 'The nominee consent link is invalid, expired, or has already been used.'}</p>
+      <a href="${portalUrl}" class="btn">Go to Alumni Election Portal</a>
+    ` : isAccepted ? `
+      <div class="icon icon-success">✓</div>
+      <h1>Nomination Accepted!</h1>
+      <p>
+        Thank you for confirming your candidacy. Your nomination has been formally submitted to the Election Scrutiny Committee.
+      </p>
+      <div class="details">
+        <p><strong>Candidate (You):</strong> ${nomineeName}</p>
+        <p><strong>Office Bearer Position:</strong> ${positionsStr}</p>
+        <p><strong>Proposed By:</strong> ${proposerName}</p>
+        <p><strong>Seconded By:</strong> ${seconderName}</p>
+        <p><strong>Status:</strong> Submitted to Election Scrutiny Committee</p>
+      </div>
+      <p style="font-size: 12px; color: #64748b;">
+        The proposer and the Election Commission have been notified. Your nomination will now undergo constitutional scrutiny.
+      </p>
+      <a href="${portalUrl}" class="btn">Open Alumni Portal</a>
+    ` : `
+      <div class="icon icon-declined">✕</div>
+      <h1>Nomination Declined</h1>
+      <p>
+        You have declined to stand as a candidate for this nomination.
+      </p>
+      <div class="details">
+        <p><strong>Position:</strong> ${positionsStr}</p>
+        <p><strong>Proposed By:</strong> ${proposerName}</p>
+        <p><strong>Seconded By:</strong> ${seconderName}</p>
+        <p><strong>Outcome:</strong> Nomination was NOT submitted</p>
+      </div>
+      <p style="font-size: 12px; color: #64748b;">
+        In accordance with election bylaws, a nomination without the nominee's affirmative consent cannot be submitted.
+      </p>
+      <a href="${portalUrl}" class="btn">Open Alumni Portal</a>
+    `}
+  </div>
+</body>
+</html>
+  `;
+}
+
 module.exports = {
   generateElectionAnnouncementEmail,
   generateSeconderConsentEmail,
-  generateSeconderConfirmationPage
+  generateSeconderConfirmationPage,
+  generateNomineeConsentEmail,
+  generateNomineeConfirmationPage
 };
+
 

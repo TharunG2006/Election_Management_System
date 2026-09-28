@@ -12,7 +12,9 @@ const rateLimit = require('express-rate-limit');
 const { 
   generateElectionAnnouncementEmail, 
   generateSeconderConsentEmail, 
-  generateSeconderConfirmationPage 
+  generateSeconderConfirmationPage,
+  generateNomineeConsentEmail,
+  generateNomineeConfirmationPage
 } = require('./electionEmailTemplate');
 
 const app = express();
@@ -39,6 +41,75 @@ function createMailTransporter(customPass, customUser) {
     }),
     smtpUser,
     senderAddress: process.env.SMTP_FROM || `"Alumni Election Commission" <${smtpUser}>`
+  };
+}
+
+/**
+ * Resolves a nominee photo to a direct public HTTPS hosted URL.
+ * Hosting the photo as a public HTTPS URL ensures that Gmail and other email clients
+ * render it strictly inline inside the email body WITHOUT displaying separate attachment chips,
+ * "noname" pills, or downloadable attachment preview boxes at the bottom of the email.
+ */
+async function resolveNomineePhotoUrl(photoDataUrl) {
+  if (!photoDataUrl) return null;
+  if (photoDataUrl.startsWith('http://') || photoDataUrl.startsWith('https://')) {
+    return photoDataUrl;
+  }
+  const matches = photoDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!matches) return null;
+  const [, mimeType, base64Data] = matches;
+  const ext = (mimeType.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+
+  try {
+    const buffer = Buffer.from(base64Data, 'base64');
+    const form = new FormData();
+    form.append('reqtype', 'fileupload');
+    const blob = new Blob([buffer], { type: mimeType });
+    form.append('fileToUpload', blob, `nominee_photo.${ext}`);
+
+    const res = await fetch('https://catbox.moe/user/api.php', {
+      method: 'POST',
+      body: form
+    });
+    if (res.ok) {
+      const hostedUrl = (await res.text()).trim();
+      if (hostedUrl.startsWith('http')) {
+        console.log(`[PhotoHost] Nominee photo hosted at: ${hostedUrl}`);
+        return hostedUrl;
+      }
+    }
+  } catch (err) {
+    console.warn("[PhotoHost] Could not upload photo to public host:", err.message);
+  }
+  return null;
+}
+
+/**
+ * Converts a base64 data URL to a nodemailer CID inline attachment (fallback).
+ * @param {string|null} dataUrl  - e.g. "data:image/jpeg;base64,/9j/..."
+ * @param {string} cid           - Content-ID used in HTML as <img src="cid:xxx">
+ * @returns {{ cidUrl: string, attachment: object }|null}
+ */
+function buildPhotoAttachment(dataUrl, cid = 'nominee-photo') {
+  if (!dataUrl) return null;
+  if (dataUrl.startsWith('http://') || dataUrl.startsWith('https://')) {
+    return {
+      cidUrl: dataUrl,
+      attachment: null
+    };
+  }
+  const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!matches) return null;
+  const [, mimeType, base64Data] = matches;
+  return {
+    cidUrl: `cid:${cid}`,
+    attachment: {
+      filename: false,
+      content: Buffer.from(base64Data, 'base64'),
+      contentType: mimeType,
+      cid,
+      contentDisposition: 'inline'
+    }
   };
 }
 
@@ -1103,6 +1174,7 @@ app.post('/api/applications', async (req, res) => {
     const {
       proposer,
       nominee,
+      nomineePhoto,
 
       applicantEmail,
       name,
@@ -1137,6 +1209,13 @@ app.post('/api/applications', async (req, res) => {
 
     if (!seconderEmail) {
       return res.status(400).json({ error: 'Seconder email is required. Every nomination must be seconded by an eligible alumni member.' });
+    }
+
+    // STRICT RULE: Nominee passport-size photograph is mandatory
+    if (!nomineePhoto || (typeof nomineePhoto === 'string' && !nomineePhoto.trim())) {
+      return res.status(400).json({
+        error: 'Nominee passport-size photograph is strictly mandatory. You cannot submit a nomination without uploading the nominee’s photograph.'
+      });
     }
 
     // STRICT RULE: No Self-Nomination
@@ -1231,6 +1310,7 @@ app.post('/api/applications', async (req, res) => {
       continuousService: continuousService || { years: 1, withoutGap: true, details: '' },
       purposeStatement: purposeStatement || motivation || '',
       motivation: purposeStatement || motivation || '',
+      nomineePhoto: nomineePhoto || null,
       // Initially pending seconder willingness - NOT yet submitted for scrutiny!
       status: 'pending_seconding',
       seconderConsentStatus: 'pending',
@@ -1242,6 +1322,19 @@ app.post('/api/applications', async (req, res) => {
       submittedAt: new Date()
     };
 
+    // Resolve nominee photo to public CDN URL so Gmail renders it strictly inline without attachment chips or download cards
+    if (newApplication.nomineePhoto) {
+      try {
+        const hostedUrl = await resolveNomineePhotoUrl(newApplication.nomineePhoto);
+        if (hostedUrl) {
+          newApplication.nomineePhoto = hostedUrl;
+          newApplication.nomineePhotoUrl = hostedUrl;
+        }
+      } catch (uploadErr) {
+        console.warn("Failed to host nominee photo:", uploadErr.message);
+      }
+    }
+
     // Dispatch official email to seconder asking for their willingness
     let secondingEmailSent = false;
     let secondingEmailError = null;
@@ -1250,6 +1343,17 @@ app.post('/api/applications', async (req, res) => {
       const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
       const apiBaseUrl = process.env.SERVER_URL || `http://localhost:${port}`;
 
+      // If photo is already hosted on CDN, use it directly (NO email attachment = NO attachment chip in Gmail!)
+      let mailAttachments = undefined;
+      let emailPhoto = newApplication.nomineePhoto;
+      if (emailPhoto && emailPhoto.startsWith('data:')) {
+        const photoAttachInfo = buildPhotoAttachment(emailPhoto, 'nominee-photo');
+        if (photoAttachInfo) {
+          emailPhoto = photoAttachInfo.cidUrl;
+          if (photoAttachInfo.attachment) mailAttachments = [photoAttachInfo.attachment];
+        }
+      }
+
       const emailData = generateSeconderConsentEmail({
         proposer: newApplication.proposer,
         nominee: newApplication.nominee,
@@ -1257,17 +1361,21 @@ app.post('/api/applications', async (req, res) => {
         targetPositions: newApplication.targetPositions,
         roleCategory: newApplication.roleCategory,
         purposeStatement: newApplication.purposeStatement,
+        nomineePhoto: emailPhoto || null,
         consentToken: seconderConsentToken,
         portalUrl,
         apiBaseUrl
       });
 
-      await transporter.sendMail({
+      const seconderMailOptions = {
         from: senderAddress,
         to: seconderEmail,
         subject: emailData.subject,
         html: emailData.html
-      });
+      };
+      if (mailAttachments) seconderMailOptions.attachments = mailAttachments;
+
+      await transporter.sendMail(seconderMailOptions);
       secondingEmailSent = true;
       console.log(`Seconding willingness request successfully sent to ${seconderEmail}`);
     } catch (mailErr) {
@@ -1328,55 +1436,120 @@ app.get('/api/nominations/seconding-consent', async (req, res) => {
 
     const isAccept = decision === 'accept';
     const newConsentStatus = isAccept ? 'accepted' : 'declined';
-    // If accepted, formally promote to 'pending' (submitted for scrutiny); otherwise 'seconding_declined'
-    const newStatus = isAccept ? 'pending' : 'seconding_declined';
+    // If accepted → awaiting nominee consent; if declined → seconding_declined
+    const newStatus = isAccept ? 'pending_nominee_consent' : 'seconding_declined';
+
+    // Generate nominee consent token if accepting
+    const nomineeConsentToken = isAccept ? crypto.randomBytes(32).toString('hex') : null;
+
+    const updateFields = {
+      seconderConsentStatus: newConsentStatus,
+      status: newStatus,
+      seconderConsentAt: new Date()
+    };
+    if (nomineeConsentToken) {
+      updateFields.nomineeConsentToken = nomineeConsentToken;
+      updateFields.nomineeConsentStatus = 'pending';
+      updateFields.nomineeConsentExpiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    }
 
     await db.collection('applications').updateOne(
       { _id: application._id },
-      {
-        $set: {
-          seconderConsentStatus: newConsentStatus,
-          status: newStatus,
-          seconderConsentAt: new Date(),
-          submittedAt: isAccept ? new Date() : application.submittedAt
-        }
-      }
+      { $set: updateFields }
     );
 
-    // Notify Proposer & Nominee via email
+    const portalUrl2 = process.env.CLIENT_URL || 'http://localhost:5173';
+    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:5000';
+
     try {
       const { transporter, senderAddress } = createMailTransporter();
       const proposerEmail = application.proposer?.email || application.proposerEmail;
       const nomineeEmail = application.nominee?.email || application.nomineeEmail;
       const positionsText = (application.targetPositions || []).join(', ');
 
-      if (proposerEmail) {
-        const subject = isAccept 
-          ? `Seconding Confirmed: Nomination for ${application.nominee?.name} is officially submitted!`
-          : `Notice: Seconding request for ${application.nominee?.name} was declined`;
-        const bodyContent = isAccept
-          ? `<p>Dear <strong>${application.proposer?.name || 'Alumni Member'}</strong>,</p>
-             <p>We are pleased to inform you that <strong>${application.seconder?.name || 'The designated seconder'}</strong> (${application.seconder?.email || ''}) has <strong>accepted</strong> your request to second the nomination of <strong>${application.nominee?.name}</strong> for the office of <strong>${positionsText}</strong>.</p>
-             <p>In accordance with election bylaws, the nomination proposal has now been <strong>formally submitted</strong> to the Election Scrutiny Committee for verification.</p>`
-          : `<p>Dear <strong>${application.proposer?.name || 'Alumni Member'}</strong>,</p>
-             <p>The designated seconder <strong>${application.seconder?.name || 'The seconder'}</strong> (${application.seconder?.email || ''}) has <strong>declined</strong> to second the nomination of <strong>${application.nominee?.name}</strong> for <strong>${positionsText}</strong>.</p>
-             <p>In accordance with constitutional election bylaws, a nomination without an affirmative seconding member cannot be submitted to the committee.</p>`;
-
+      if (!isAccept && proposerEmail) {
+        // Notify proposer of decline
         await transporter.sendMail({
           from: senderAddress,
           to: proposerEmail,
-          subject,
+          subject: `Notice: Seconding request for ${application.nominee?.name} was declined`,
           html: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; color: #1e293b; max-width: 600px; line-height: 1.6; border: 1px solid #e2e8f0; border-radius: 12px;">
-            <h2 style="color: ${isAccept ? '#16a34a' : '#dc2626'}; margin-top: 0;">${isAccept ? '✓ Nomination Seconded & Submitted' : '✕ Seconding Request Declined'}</h2>
-            ${bodyContent}
-            <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b;">
-              Alumni Election Commission • National Engineering College
-            </div>
+            <h2 style="color: #dc2626; margin-top: 0;">✕ Seconding Request Declined</h2>
+            <p>Dear <strong>${application.proposer?.name || 'Alumni Member'}</strong>,</p>
+            <p>The designated seconder <strong>${application.seconder?.name || 'The seconder'}</strong> (${application.seconder?.email || ''}) has <strong>declined</strong> to second the nomination of <strong>${application.nominee?.name}</strong> for <strong>${positionsText}</strong>.</p>
+            <p>In accordance with constitutional election bylaws, a nomination without an affirmative seconding member cannot be submitted to the committee.</p>
+            <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b;">Alumni Election Commission • National Engineering College</div>
           </div>`
         });
       }
+
+      if (isAccept && nomineeEmail && nomineeConsentToken) {
+        // Notify proposer that seconding is confirmed, awaiting nominee
+        if (proposerEmail) {
+          await transporter.sendMail({
+            from: senderAddress,
+            to: proposerEmail,
+            subject: `Seconding Confirmed – Awaiting Nominee Consent for ${application.nominee?.name}`,
+            html: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; color: #1e293b; max-width: 600px; line-height: 1.6; border: 1px solid #e2e8f0; border-radius: 12px;">
+              <h2 style="color: #16a34a; margin-top: 0;">✓ Seconding Confirmed</h2>
+              <p>Dear <strong>${application.proposer?.name || 'Alumni Member'}</strong>,</p>
+              <p><strong>${application.seconder?.name || 'The seconder'}</strong> has <strong>accepted</strong> the seconding request for the nomination of <strong>${application.nominee?.name}</strong> as <strong>${positionsText}</strong>.</p>
+              <p>An official consent notice has now been dispatched to the nominee (<strong>${application.nominee?.name}</strong>) asking whether they wish to stand for election. The nomination will be formally submitted to the Scrutiny Committee only after the nominee confirms acceptance.</p>
+              <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b;">Alumni Election Commission • National Engineering College</div>
+            </div>`
+          });
+        }
+
+        // Resolve hosted nominee photo (zero email attachment = no separate noname chip)
+        let emailNomineePhoto = application.nomineePhotoUrl || application.nomineePhoto;
+        if (emailNomineePhoto && emailNomineePhoto.startsWith('data:')) {
+          try {
+            const uploadedUrl = await resolveNomineePhotoUrl(emailNomineePhoto);
+            if (uploadedUrl) {
+              emailNomineePhoto = uploadedUrl;
+              await db.collection('applications').updateOne(
+                { _id: application._id },
+                { $set: { nomineePhoto: uploadedUrl, nomineePhotoUrl: uploadedUrl } }
+              );
+            }
+          } catch (e) {
+            console.warn("Could not host photo:", e.message);
+          }
+        }
+
+        let mailAttachmentsN = undefined;
+        if (emailNomineePhoto && emailNomineePhoto.startsWith('data:')) {
+          const photoAttachInfoN = buildPhotoAttachment(emailNomineePhoto, 'nominee-photo');
+          if (photoAttachInfoN) {
+            emailNomineePhoto = photoAttachInfoN.cidUrl;
+            if (photoAttachInfoN.attachment) mailAttachmentsN = [photoAttachInfoN.attachment];
+          }
+        }
+
+        const nomineeEmailData = generateNomineeConsentEmail({
+          proposer: application.proposer || { name: '', email: proposerEmail },
+          nominee: application.nominee || { name: application.name, email: nomineeEmail },
+          seconder: application.seconder || { name: '', email: application.seconderEmail },
+          targetPositions: application.targetPositions,
+          roleCategory: application.roleCategory,
+          purposeStatement: application.purposeStatement || application.motivation,
+          nomineePhoto: emailNomineePhoto || null,
+          consentToken: nomineeConsentToken,
+          portalUrl: portalUrl2,
+          apiBaseUrl
+        });
+        const nomineeMailOpts = {
+          from: senderAddress,
+          to: nomineeEmail,
+          subject: nomineeEmailData.subject,
+          html: nomineeEmailData.html
+        };
+        if (mailAttachmentsN) nomineeMailOpts.attachments = mailAttachmentsN;
+        await transporter.sendMail(nomineeMailOpts);
+        console.log(`Nominee consent email dispatched to ${nomineeEmail}`);
+      }
     } catch (mailErr) {
-      console.warn("Could not dispatch seconding status update email:", mailErr.message);
+      console.warn("Could not dispatch seconding/nominee status email:", mailErr.message);
     }
 
     res.send(generateSeconderConfirmationPage({
@@ -1419,19 +1592,84 @@ app.post('/api/nominations/seconding-consent', optionalAuth, async (req, res) =>
 
     const isAccept = decision === 'accept';
     const newConsentStatus = isAccept ? 'accepted' : 'declined';
-    const newStatus = isAccept ? 'pending' : 'seconding_declined';
+    const newStatus = isAccept ? 'pending_nominee_consent' : 'seconding_declined';
+
+    const nomineeConsentToken = isAccept ? crypto.randomBytes(32).toString('hex') : null;
+    const updateFields = {
+      seconderConsentStatus: newConsentStatus,
+      status: newStatus,
+      seconderConsentAt: new Date()
+    };
+    if (nomineeConsentToken) {
+      updateFields.nomineeConsentToken = nomineeConsentToken;
+      updateFields.nomineeConsentStatus = 'pending';
+      updateFields.nomineeConsentExpiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    }
 
     await db.collection('applications').updateOne(
       { _id: application._id },
-      {
-        $set: {
-          seconderConsentStatus: newConsentStatus,
-          status: newStatus,
-          seconderConsentAt: new Date(),
-          submittedAt: isAccept ? new Date() : application.submittedAt
-        }
-      }
+      { $set: updateFields }
     );
+
+    // Dispatch nominee consent email if accepted
+    if (isAccept && nomineeConsentToken) {
+      try {
+        const { transporter, senderAddress } = createMailTransporter();
+        const portalUrl2 = process.env.CLIENT_URL || 'http://localhost:5173';
+        const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:5000';
+        const nomineeEmail = application.nominee?.email || application.nomineeEmail;
+        if (nomineeEmail) {
+          let emailNomineePhoto = application.nomineePhotoUrl || application.nomineePhoto;
+          if (emailNomineePhoto && emailNomineePhoto.startsWith('data:')) {
+            try {
+              const uploadedUrl = await resolveNomineePhotoUrl(emailNomineePhoto);
+              if (uploadedUrl) {
+                emailNomineePhoto = uploadedUrl;
+                await db.collection('applications').updateOne(
+                  { _id: application._id },
+                  { $set: { nomineePhoto: uploadedUrl, nomineePhotoUrl: uploadedUrl } }
+                );
+              }
+            } catch (e) {
+              console.warn("Could not host photo:", e.message);
+            }
+          }
+
+          let mailAttachmentsP = undefined;
+          if (emailNomineePhoto && emailNomineePhoto.startsWith('data:')) {
+            const photoAttachInfoP = buildPhotoAttachment(emailNomineePhoto, 'nominee-photo');
+            if (photoAttachInfoP) {
+              emailNomineePhoto = photoAttachInfoP.cidUrl;
+              if (photoAttachInfoP.attachment) mailAttachmentsP = [photoAttachInfoP.attachment];
+            }
+          }
+
+          const nomineeEmailData = generateNomineeConsentEmail({
+            proposer: application.proposer || { name: '', email: application.proposerEmail },
+            nominee: application.nominee || { name: application.name, email: nomineeEmail },
+            seconder: application.seconder || { name: '', email: application.seconderEmail },
+            targetPositions: application.targetPositions,
+            roleCategory: application.roleCategory,
+            purposeStatement: application.purposeStatement || application.motivation,
+            nomineePhoto: emailNomineePhoto || null,
+            consentToken: nomineeConsentToken,
+            portalUrl: portalUrl2,
+            apiBaseUrl
+          });
+          const nomineeMailOptsP = {
+            from: senderAddress,
+            to: nomineeEmail,
+            subject: nomineeEmailData.subject,
+            html: nomineeEmailData.html
+          };
+          if (mailAttachmentsP) nomineeMailOptsP.attachments = mailAttachmentsP;
+          await transporter.sendMail(nomineeMailOptsP);
+          console.log(`[In-portal] Nominee consent email dispatched to ${nomineeEmail}`);
+        }
+      } catch (mailErr) {
+        console.warn("Could not dispatch nominee consent email:", mailErr.message);
+      }
+    }
 
     res.json({
       success: true,
@@ -1444,6 +1682,151 @@ app.post('/api/nominations/seconding-consent', optionalAuth, async (req, res) =>
   }
 });
 
+// Nominee Willingness Consent API (via email link)
+app.get('/api/nominations/nominee-consent', async (req, res) => {
+  try {
+    const { token, decision } = req.query;
+    const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+
+    if (!token) {
+      return res.send(generateNomineeConfirmationPage({
+        success: false,
+        errorMessage: 'Invalid verification link. Token is missing.',
+        portalUrl
+      }));
+    }
+
+    const application = await db.collection('applications').findOne({ nomineeConsentToken: token });
+    if (!application) {
+      return res.send(generateNomineeConfirmationPage({
+        success: false,
+        errorMessage: 'The nominee consent request was not found or has already been processed.',
+        portalUrl
+      }));
+    }
+
+    // Already processed
+    if (application.nomineeConsentStatus && application.nomineeConsentStatus !== 'pending') {
+      return res.send(generateNomineeConfirmationPage({
+        success: true,
+        decision: application.nomineeConsentStatus,
+        nomineeName: application.nominee?.name || application.name,
+        proposerName: application.proposer?.name,
+        seconderName: application.seconder?.name,
+        positions: application.targetPositions,
+        portalUrl
+      }));
+    }
+
+    const isAccept = decision === 'accept';
+    const newNomineeConsentStatus = isAccept ? 'accepted' : 'declined';
+    const newStatus = isAccept ? 'pending' : 'nominee_declined';
+
+    await db.collection('applications').updateOne(
+      { _id: application._id },
+      {
+        $set: {
+          nomineeConsentStatus: newNomineeConsentStatus,
+          status: newStatus,
+          nomineeConsentAt: new Date(),
+          submittedAt: isAccept ? new Date() : application.submittedAt
+        }
+      }
+    );
+
+    // Notify proposer of nominee decision
+    try {
+      const { transporter, senderAddress } = createMailTransporter();
+      const proposerEmail = application.proposer?.email || application.proposerEmail;
+      const positionsText = (application.targetPositions || []).join(', ');
+      if (proposerEmail) {
+        await transporter.sendMail({
+          from: senderAddress,
+          to: proposerEmail,
+          subject: isAccept
+            ? `Nomination Confirmed: ${application.nominee?.name} accepted & submitted for Scrutiny!`
+            : `Notice: ${application.nominee?.name} declined the nomination for ${positionsText}`,
+          html: `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; color: #1e293b; max-width: 600px; line-height: 1.6; border: 1px solid #e2e8f0; border-radius: 12px;">
+            <h2 style="color: ${isAccept ? '#7c3aed' : '#dc2626'}; margin-top: 0;">${isAccept ? '✓ Nominee Accepted – Submitted for Scrutiny' : '✕ Nominee Declined the Nomination'}</h2>
+            <p>Dear <strong>${application.proposer?.name || 'Alumni Member'}</strong>,</p>
+            ${isAccept
+              ? `<p>The nominee <strong>${application.nominee?.name}</strong> has <strong>accepted</strong> the nomination for <strong>${positionsText}</strong>. The nomination proposal has now been formally submitted to the Election Scrutiny Committee.</p>`
+              : `<p>The nominee <strong>${application.nominee?.name}</strong> has <strong>declined</strong> to stand for the position of <strong>${positionsText}</strong>. In accordance with election bylaws, the proposal was not submitted to the Scrutiny Committee.</p>`
+            }
+            <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b;">Alumni Election Commission • National Engineering College</div>
+          </div>`
+        });
+      }
+    } catch (mailErr) {
+      console.warn("Could not dispatch nominee decision notification:", mailErr.message);
+    }
+
+    res.send(generateNomineeConfirmationPage({
+      success: true,
+      decision: newNomineeConsentStatus,
+      nomineeName: application.nominee?.name || application.name,
+      proposerName: application.proposer?.name,
+      seconderName: application.seconder?.name,
+      positions: application.targetPositions,
+      portalUrl
+    }));
+  } catch (err) {
+    console.error("Nominee consent error:", err);
+    res.status(500).send("Server error processing nominee consent");
+  }
+});
+
+// Nominee Willingness Consent API (in-portal)
+app.post('/api/nominations/nominee-consent', optionalAuth, async (req, res) => {
+  try {
+    const { applicationId, token, decision } = req.body;
+    let query = {};
+    if (token) {
+      query.nomineeConsentToken = token;
+    } else if (applicationId) {
+      query._id = new ObjectId(applicationId);
+      if (req.user?.email) {
+        query.$or = [
+          { 'nominee.email': req.user.email.toLowerCase() },
+          { nomineeEmail: req.user.email.toLowerCase() },
+          { applicantEmail: req.user.email.toLowerCase() }
+        ];
+      }
+    } else {
+      return res.status(400).json({ error: 'applicationId or token is required' });
+    }
+
+    const application = await db.collection('applications').findOne(query);
+    if (!application) {
+      return res.status(404).json({ error: 'Nomination not found or unauthorized' });
+    }
+    if (application.nomineeConsentStatus && application.nomineeConsentStatus !== 'pending') {
+      return res.status(409).json({ error: 'Nominee consent has already been recorded.' });
+    }
+
+    const isAccept = decision === 'accept';
+    const newNomineeConsentStatus = isAccept ? 'accepted' : 'declined';
+    const newStatus = isAccept ? 'pending' : 'nominee_declined';
+
+    await db.collection('applications').updateOne(
+      { _id: application._id },
+      {
+        $set: {
+          nomineeConsentStatus: newNomineeConsentStatus,
+          status: newStatus,
+          nomineeConsentAt: new Date(),
+          submittedAt: isAccept ? new Date() : application.submittedAt
+        }
+      }
+    );
+
+    res.json({ success: true, nomineeConsentStatus: newNomineeConsentStatus, status: newStatus });
+  } catch (err) {
+    console.error("In-app nominee consent error:", err);
+    res.status(500).json({ error: 'Failed to update nominee consent' });
+  }
+});
+
 // List Applications with role-based visibility filter
 app.get('/api/applications', optionalAuth, async (req, res) => {
   try {
@@ -1451,16 +1834,32 @@ app.get('/api/applications', optionalAuth, async (req, res) => {
     const emailFilter = req.query.email;
     const roleType = req.query.roleType;
     let query = {};
+    const isScrutinyView = req.query.source === 'scrutiny' || (!emailFilter && (!req.user || req.user.role === 'admin'));
 
-    if (statusFilter && statusFilter !== 'all') {
-      if (statusFilter === 'withdrawn') {
-        query.$or = [{ status: 'withdrawn' }, { withdrawn: true }];
-      } else if (statusFilter === 'pending') {
-        // Scrutiny Committee pending filter: only show formally submitted (seconded) applications
-        query.status = 'pending';
-        query.seconderConsentStatus = { $ne: 'declined' };
-      } else {
-        query.status = statusFilter;
+    if (isScrutinyView) {
+      // STRICT CONSTITUTIONAL RULE:
+      // A nomination moves to the Scrutiny Committee ONLY after BOTH the seconder and nominee
+      // have affirmatively consented. Pre-consent workflow states (pending_seconding, seconding_declined,
+      // pending_nominee_consent, nominee_declined) must NEVER be viewed in the Scrutiny Panel.
+      query.seconderConsentStatus = 'accepted';
+      query.nomineeConsentStatus = 'accepted';
+      query.status = { $nin: ['pending_seconding', 'seconding_declined', 'pending_nominee_consent', 'nominee_declined'] };
+
+      if (statusFilter && statusFilter !== 'all') {
+        if (statusFilter === 'withdrawn') {
+          query.$or = [{ status: 'withdrawn' }, { withdrawn: true }];
+          delete query.status;
+        } else {
+          query.status = statusFilter;
+        }
+      }
+    } else {
+      if (statusFilter && statusFilter !== 'all') {
+        if (statusFilter === 'withdrawn') {
+          query.$or = [{ status: 'withdrawn' }, { withdrawn: true }];
+        } else {
+          query.status = statusFilter;
+        }
       }
     }
 

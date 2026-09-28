@@ -1961,6 +1961,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasEndorsementDeclaration, setHasEndorsementDeclaration] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [nomineePhoto, setNomineePhoto] = useState<string>(''); // base64 data URL
 
   const wordCount = purposeStatement.trim() ? purposeStatement.trim().split(/\s+/).length : 0;
   const isPurposeStatementSufficient = wordCount >= 15;
@@ -1975,6 +1976,15 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
 
     if (isSelfNomination) {
       setErrorMsg("Self-nomination is strictly prohibited. You cannot propose yourself as a candidate.");
+      return;
+    }
+
+    if (!nomineePhoto || !nomineePhoto.trim()) {
+      setErrorMsg("A recent passport-size photograph of the nominee is strictly required to submit this nomination proposal.");
+      setFieldErrors(prev => ({
+        ...prev,
+        nomineePhoto: "Passport-size photograph of the nominee is required."
+      }));
       return;
     }
 
@@ -2007,6 +2017,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
         body: JSON.stringify({
           proposer,
           nominee,
+          nomineePhoto: nomineePhoto || null,
           targetPositions,
           roleCategory,
           continuousService: {
@@ -2313,6 +2324,79 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
                     )}
                   </div>
                 </div>
+
+                {/* Passport Photo Upload \u2013 spanning full width */}
+                <div className="col-span-1 md:col-span-2">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">Nominee Passport Size Photograph</span>
+                    <span className="text-[10px] text-red-500 font-bold">* Required</span>
+                  </div>
+                  <div className={`relative flex items-start gap-4 p-4 border-2 border-dashed rounded-2xl transition-colors ${
+                    nomineePhoto
+                      ? 'border-green-400 dark:border-green-600 bg-green-50/50 dark:bg-green-950/20'
+                      : fieldErrors.nomineePhoto
+                      ? 'border-red-400 dark:border-red-600 bg-red-50/40 dark:bg-red-950/20'
+                      : 'border-indigo-300 dark:border-indigo-700 bg-indigo-50/30 dark:bg-indigo-950/20 hover:border-indigo-500'
+                  }`}>
+                    {nomineePhoto ? (
+                      <>
+                        <img
+                          src={nomineePhoto}
+                          alt="Nominee passport photo"
+                          className="w-20 h-24 object-cover rounded-xl border-2 border-green-400 shadow-md flex-shrink-0"
+                        />
+                        <div className="flex flex-col justify-between h-24">
+                          <div>
+                            <p className="text-xs font-bold text-green-700 dark:text-green-400 flex items-center gap-1">&#10003; Photo uploaded</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setNomineePhoto('')}
+                            className="text-[10px] text-red-500 hover:text-red-700 font-semibold flex items-center gap-1 w-fit"
+                          >
+                            &#10005; Remove &amp; replace
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center w-full cursor-pointer text-center py-2">
+                        <div className="w-14 h-14 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center mb-2">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-600 dark:text-indigo-400"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                        </div>
+                        <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300">Click to upload passport photo</span>
+                        <span className="text-[10px] text-slate-400 mt-0.5">JPG, PNG &bull; Max 2MB &bull; Portrait orientation preferred</span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            if (file.size > 2 * 1024 * 1024) {
+                              alert('Photo must be under 2MB. Please compress and retry.');
+                              return;
+                            }
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              setNomineePhoto(ev.target?.result as string);
+                              setFieldErrors(prev => {
+                                const next = { ...prev };
+                                delete next.nomineePhoto;
+                                return next;
+                              });
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                  {fieldErrors.nomineePhoto && (
+                    <p className="text-xs text-red-500 font-bold mt-1.5 flex items-center gap-1">
+                      <AlertCircle size={14} /> {fieldErrors.nomineePhoto}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2566,15 +2650,20 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
 
             <button
               type="submit"
-              disabled={isSubmitting || isSelfNomination || !hasEndorsementDeclaration || targetPositions.length === 0}
+              disabled={isSubmitting || isSelfNomination || !hasEndorsementDeclaration || targetPositions.length === 0 || !nomineePhoto}
               className={`w-full py-4 rounded-xl font-bold uppercase tracking-wider text-sm transition-all shadow-lg ${
-                !isSubmitting && !isSelfNomination && hasEndorsementDeclaration && targetPositions.length > 0
+                !isSubmitting && !isSelfNomination && hasEndorsementDeclaration && targetPositions.length > 0 && !!nomineePhoto
                   ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:opacity-95 shadow-indigo-500/25'
                   : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed shadow-none'
               }`}
             >
               {isSubmitting ? "Filing Nomination Proposal..." : "Submit Nomination Proposal"}
             </button>
+            {!nomineePhoto && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold text-center mt-2 flex items-center justify-center gap-1">
+                <AlertCircle size={14} /> Please upload the nominee's passport photograph above to submit this nomination proposal.
+              </p>
+            )}
           </form>
         )}
       </div>
@@ -2586,7 +2675,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
 
 const ScrutinyCommitteeScreen = ({ token }: any) => {
   const [applications, setApplications] = useState<any[]>([]);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState('pending');
   const [loading, setLoading] = useState(true);
   const [selectedApp, setSelectedApp] = useState<any>(null);
   const [committeeRemarks, setCommitteeRemarks] = useState('');
@@ -2601,7 +2690,7 @@ const ScrutinyCommitteeScreen = ({ token }: any) => {
 
   const fetchApplications = () => {
     setLoading(true);
-    fetch(`http://localhost:5000/api/applications?status=${filter}`, {
+    fetch(`http://localhost:5000/api/applications?status=${filter}&source=scrutiny`, {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {}
     })
       .then(res => {
@@ -2681,6 +2770,18 @@ const ScrutinyCommitteeScreen = ({ token }: any) => {
     }
   };
 
+  // Strict filter: only nominations with affirmative seconding and nominee willingness consent move to Scrutiny
+  const validScrutinyApplications = applications.filter(app => {
+    const isPreConsent =
+      app.status === 'pending_seconding' ||
+      app.status === 'seconding_declined' ||
+      app.status === 'pending_nominee_consent' ||
+      app.status === 'nominee_declined' ||
+      app.seconderConsentStatus !== 'accepted' ||
+      app.nomineeConsentStatus !== 'accepted';
+    return !isPreConsent;
+  });
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -2719,8 +2820,8 @@ const ScrutinyCommitteeScreen = ({ token }: any) => {
           </div>
           <div className="flex flex-wrap gap-2 items-center">
             {[
-              { id: 'all', label: 'All Proposals' },
               { id: 'pending', label: 'Pending Scrutiny' },
+              { id: 'all', label: 'All Verified Submissions' },
               { id: 'approved', label: 'Approved' },
               { id: 'rejected', label: 'Rejected' },
               { id: 'withdrawn', label: 'Withdrawn' }
@@ -2754,21 +2855,32 @@ const ScrutinyCommitteeScreen = ({ token }: any) => {
           <div className="p-16 flex items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
           </div>
-        ) : applications.length === 0 ? (
+        ) : validScrutinyApplications.length === 0 ? (
           <div className="p-16 flex flex-col items-center justify-center text-center">
             <div className="clay-icon w-14 h-14 text-slate-400 mb-3">
               <UserCheck size={28} />
             </div>
             <p className="text-slate-700 dark:text-slate-300 font-semibold text-base">No proposals found under this filter.</p>
-            <p className="text-xs text-slate-500 mt-1">Submitted nomination proposals will appear here for scrutiny.</p>
+            <p className="text-xs text-slate-500 mt-1">Submitted nomination proposals will appear here for scrutiny once both seconder and nominee have accepted.</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {applications.map((app) => (
+            {validScrutinyApplications.map((app) => (
               <div key={app._id} className="p-6 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                 <div className="flex flex-col lg:flex-row justify-between gap-6">
                   <div className="space-y-4 flex-1">
-                    <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-4">
+                      {app.nomineePhoto ? (
+                        <img
+                          src={app.nomineePhoto}
+                          alt={app.name}
+                          className="w-14 h-16 object-cover rounded-xl border-2 border-purple-200 dark:border-purple-700 shadow-md flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-14 h-16 rounded-xl bg-purple-100 dark:bg-purple-900/30 border-2 border-purple-200 dark:border-purple-700 flex items-center justify-center flex-shrink-0">
+                          <User size={24} className="text-purple-400" />
+                        </div>
+                      )}
                       <div>
                         <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Candidate / Nominee</span>
                         <h4 className="text-lg font-bold text-slate-900 dark:text-white">{app.name}</h4>
@@ -2903,10 +3015,23 @@ const ScrutinyCommitteeScreen = ({ token }: any) => {
             >
               {/* Sticky Header with prominent 'X' close button */}
               <div className="p-6 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm sticky top-0 z-20 flex justify-between items-start">
-                <div>
-                  <span className="text-xs font-bold text-purple-600 uppercase tracking-wider">OFFICIAL SCRUTINY PROCEEDING</span>
-                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-1">Nominee: {selectedApp.name}</h3>
-                  <p className="text-xs text-slate-500">Proposed by: {selectedApp.proposer?.name} • Position: {selectedApp.targetPositions?.join(", ")}</p>
+                <div className="flex items-center gap-4">
+                  {selectedApp.nomineePhoto ? (
+                    <img
+                      src={selectedApp.nomineePhoto}
+                      alt={selectedApp.name}
+                      className="w-14 h-16 object-cover rounded-xl border-2 border-purple-300 dark:border-purple-600 shadow-md flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-14 h-16 rounded-xl bg-purple-100 dark:bg-purple-900/30 border-2 border-purple-200 dark:border-purple-700 flex items-center justify-center flex-shrink-0">
+                      <User size={24} className="text-purple-400" />
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-xs font-bold text-purple-600 uppercase tracking-wider">OFFICIAL SCRUTINY PROCEEDING</span>
+                    <h3 className="text-2xl font-bold text-slate-900 dark:text-white mt-0.5">Nominee: {selectedApp.name}</h3>
+                    <p className="text-xs text-slate-500">Proposed by: {selectedApp.proposer?.name} • Position: {selectedApp.targetPositions?.join(", ")}</p>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -3117,6 +3242,28 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
     }
   };
 
+  const handleNomineeConsent = async (applicationId: string, decision: 'accept' | 'decline') => {
+    setIsProcessingConsent(applicationId);
+    try {
+      const res = await fetch('http://localhost:5000/api/nominations/nominee-consent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId, decision })
+      });
+      if (res.ok) {
+        fetchMyApplications();
+      } else {
+        const d = await res.json();
+        alert(d.error || "Failed to update nominee consent");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error updating nominee consent");
+    } finally {
+      setIsProcessingConsent(null);
+    }
+  };
+
   const confirmWithdrawal = async () => {
     if (!withdrawTarget) return;
     setIsWithdrawing(true);
@@ -3150,7 +3297,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-1">My Election Nominations</h2>
           <p className="text-sm text-indigo-600 dark:text-indigo-300">
-            Track proposals you filed, nominations where you are the candidate, and incoming seconding requests.
+        Track proposals you filed, nominations where you are the candidate, and incoming seconding and nominee requests.
           </p>
         </div>
         <button 
@@ -3222,23 +3369,39 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
       ) : (
         <div className="space-y-4">
           {applications.map((app: any) => {
-            const isPendingSeconding = app.status === 'pending_seconding' || app.seconderConsentStatus === 'pending';
-            const isSecondingDeclined = app.status === 'seconding_declined' || app.seconderConsentStatus === 'declined';
+            const isPendingSeconding = app.status === 'pending_seconding' || (app.seconderConsentStatus === 'pending' && app.status === 'pending_seconding');
+            const isSecondingDeclined = app.status === 'seconding_declined' || (app.seconderConsentStatus === 'declined' && app.status === 'seconding_declined');
             const isSecondingAccepted = app.seconderConsentStatus === 'accepted';
+            const isPendingNomineeConsent = app.status === 'pending_nominee_consent';
+            const isNomineeDeclined = app.status === 'nominee_declined';
+            const isNomineeAccepted = app.nomineeConsentStatus === 'accepted';
 
             return (
               <div key={app._id} className="clay-card p-6 md:p-8 space-y-4">
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
-                  <div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
-                      NOMINATION ENTRY • {app.targetPositions?.join(', ')}
-                    </span>
-                    <h3 className="font-bold text-xl text-slate-900 dark:text-white">
-                      Nominee: {app.name}
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-2">
-                      <Clock size={14} /> Filed on {new Date(app.submittedAt || app.createdAt).toLocaleDateString()}
-                    </p>
+                  <div className="flex items-center gap-4">
+                    {app.nomineePhoto ? (
+                      <img
+                        src={app.nomineePhoto}
+                        alt={app.name}
+                        className="w-14 h-16 object-cover rounded-xl border-2 border-indigo-200 dark:border-indigo-700 shadow-md flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-14 h-16 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 border-2 border-indigo-200 dark:border-indigo-700 flex items-center justify-center flex-shrink-0">
+                        <User size={24} className="text-indigo-400" />
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
+                        NOMINATION ENTRY • {app.targetPositions?.join(', ')}
+                      </span>
+                      <h3 className="font-bold text-xl text-slate-900 dark:text-white">
+                        Nominee: {app.name}
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-2">
+                        <Clock size={14} /> Filed on {new Date(app.submittedAt || app.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-3">
@@ -3248,12 +3411,16 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
                         app.status === 'rejected' ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-800' : 
                         isPendingSeconding ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
                         isSecondingDeclined ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-800' :
+                        isPendingNomineeConsent ? 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300 border border-violet-200 dark:border-violet-800' :
+                        isNomineeDeclined ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-800' :
                         'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'}`}
                     >
                       {app.status === 'approved' ? '✓ Scrutiny Passed' : 
                        isPendingSeconding ? '⏳ Seconder Consent Pending' :
                        isSecondingDeclined ? '✕ Seconding Declined' :
-                       isSecondingAccepted && app.status === 'pending' ? '✓ Seconded • In Scrutiny' :
+                       isPendingNomineeConsent ? '⏳ Awaiting Nominee Consent' :
+                       isNomineeDeclined ? '✕ Nominee Declined' :
+                       isNomineeAccepted && app.status === 'pending' ? '✓ Confirmed • In Scrutiny' :
                        app.status}
                     </span>
                   </div>
@@ -3272,6 +3439,56 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
                     <p className="text-slate-500 text-[11px]">{app.seconder?.email || app.seconderEmail || "N/A"}</p>
                   </div>
                 </div>
+
+                {/* Nominee In-App Action Callout – shown in 'nominated_me' tab when nominee consent is pending */}
+                {nominationView === 'nominated_me' && isPendingNomineeConsent && (
+                  <div className="p-4 rounded-2xl bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 space-y-3">
+                    <div className="flex items-start gap-2 text-xs text-violet-900 dark:text-violet-200 font-semibold">
+                      <AlertCircle size={18} className="text-violet-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">Your Consent is Required to Stand as a Candidate:</p>
+                        <p className="text-[11px] font-normal text-violet-800 dark:text-violet-300 mt-0.5">
+                          You have been formally nominated and seconded. The nomination will only be submitted to the Scrutiny Committee if you confirm that you wish to stand for election.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="bg-white dark:bg-slate-900/50 rounded-xl p-3 text-xs space-y-1 border border-violet-100 dark:border-violet-900/40">
+                      <p><span className="font-semibold text-slate-600 dark:text-slate-400">Position:</span> <span className="font-bold text-violet-700 dark:text-violet-300">{app.targetPositions?.join(', ')}</span></p>
+                      <p><span className="font-semibold text-slate-600 dark:text-slate-400">Proposed By:</span> <span className="font-bold">{app.proposer?.name}</span> ({app.proposer?.email || app.proposerEmail})</p>
+                      <p><span className="font-semibold text-slate-600 dark:text-slate-400">Seconded By:</span> <span className="font-bold">{app.seconder?.name}</span> ({app.seconder?.email || app.seconderEmail}) <span className="text-green-600 font-bold ml-1">✓ Consented</span></p>
+                    </div>
+                    <div className="flex items-center gap-3 pt-1">
+                      <button
+                        disabled={isProcessingConsent === app._id}
+                        onClick={() => handleNomineeConsent(app._id, 'accept')}
+                        className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-violet-600/20 flex items-center gap-1.5"
+                      >
+                        ✓ Yes, I Accept the Nomination
+                      </button>
+                      <button
+                        disabled={isProcessingConsent === app._id}
+                        onClick={() => handleNomineeConsent(app._id, 'decline')}
+                        className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition-all"
+                      >
+                        ✕ Decline
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {nominationView === 'nominated_me' && isNomineeAccepted && (
+                  <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-xl text-xs text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800 flex items-center gap-2">
+                    <CheckCircle2 size={16} className="text-green-600" />
+                    <span>You have accepted this nomination. It has been formally submitted to the Election Scrutiny Committee.</span>
+                  </div>
+                )}
+
+                {nominationView === 'nominated_me' && isNomineeDeclined && (
+                  <div className="p-3 bg-red-50 dark:bg-red-950/20 rounded-xl text-xs text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800 flex items-center gap-2">
+                    <XCircle size={16} className="text-red-600" />
+                    <span>You declined this nomination. The proposal was not submitted per election bylaws.</span>
+                  </div>
+                )}
 
                 {/* Seconder In-App Action Callout */}
                 {nominationView === 'seconded_by_me' && isPendingSeconding && (
@@ -3307,7 +3524,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
                 {nominationView === 'seconded_by_me' && isSecondingAccepted && (
                   <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-xl text-xs text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800 flex items-center gap-2">
                     <CheckCircle2 size={16} className="text-green-600" />
-                    <span>You have accepted and seconded this nomination. It has been officially submitted to the Scrutiny Committee.</span>
+                    <span>You accepted and seconded this nomination. {isPendingNomineeConsent ? 'Awaiting the nominee\'s consent before submission.' : isNomineeAccepted ? 'The nominee also accepted — submitted to Scrutiny Committee.' : ''}</span>
                   </div>
                 )}
 
@@ -3323,7 +3540,16 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
                   <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-xl text-xs text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-2">
                     <Clock size={16} className="text-amber-600 flex-shrink-0" />
                     <span>
-                      An official statutory email was dispatched to <strong>{app.seconder?.name}</strong> ({app.seconder?.email || app.seconderEmail}). Waiting for their seconding consent before submission to Scrutiny Committee.
+                      Awaiting seconding consent from <strong>{app.seconder?.name}</strong> ({app.seconder?.email || app.seconderEmail}).
+                    </span>
+                  </div>
+                )}
+
+                {nominationView === 'proposed_by_me' && isPendingNomineeConsent && (
+                  <div className="p-3 bg-violet-50 dark:bg-violet-950/20 rounded-xl text-xs text-violet-800 dark:text-violet-300 border border-violet-200 dark:border-violet-800 flex items-center gap-2">
+                    <Clock size={16} className="text-violet-600 flex-shrink-0" />
+                    <span>
+                      Seconding confirmed by <strong>{app.seconder?.name}</strong>. Now awaiting <strong>{app.nominee?.name || app.name}</strong>'s consent to stand for election.
                     </span>
                   </div>
                 )}
@@ -3352,7 +3578,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
                 )}
 
                 {/* Withdrawal Option Section */}
-                {app.status !== 'withdrawn' && app.status !== 'rejected' && app.status !== 'pending_seconding' && app.status !== 'seconding_declined' && (
+                {app.status !== 'withdrawn' && app.status !== 'rejected' && app.status !== 'pending_seconding' && app.status !== 'seconding_declined' && app.status !== 'pending_nominee_consent' && app.status !== 'nominee_declined' && (
                   <div className="pt-2 flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-t border-slate-100 dark:border-slate-800">
                     <span className="text-xs text-slate-500">
                       Candidate withdrawal window is open until <strong>October 14, 2026</strong>.
@@ -3543,20 +3769,35 @@ const FinalCandidateListScreen = () => {
               className="clay-card p-6 flex flex-col justify-between space-y-4 relative overflow-hidden group hover:scale-[1.01] transition-transform"
             >
               <div className="space-y-3">
-                <div className="flex justify-between items-start">
-                  <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 text-xs font-extrabold rounded-full border border-emerald-200 dark:border-emerald-800">
-                    {cand.targetPositions?.[0] || 'Office Bearer'}
-                  </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                    ✓ Verified
-                  </span>
-                </div>
-
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">{cand.name}</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
-                    <Compass size={13} /> {cand.department} • Class of {cand.graduationYear}
-                  </p>
+                {/* Photo + position header */}
+                <div className="flex items-center gap-4">
+                  {cand.nomineePhoto ? (
+                    <img
+                      src={cand.nomineePhoto}
+                      alt={cand.name}
+                      className="w-16 h-20 object-cover rounded-xl border-2 border-emerald-200 dark:border-emerald-700 shadow-md flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-16 h-20 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-200 dark:border-emerald-700 flex items-center justify-center flex-shrink-0">
+                      <User size={28} className="text-emerald-400" />
+                    </div>
+                  )}
+                  <div className="flex flex-col gap-1.5 flex-1">
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="px-3 py-1 bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 text-xs font-extrabold rounded-full border border-emerald-200 dark:border-emerald-800">
+                        {cand.targetPositions?.[0] || 'Office Bearer'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                        ✓ Verified
+                      </span>
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-900 dark:text-white">{cand.name}</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
+                        <Compass size={13} /> {cand.department} • Class of {cand.graduationYear}
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="p-3 bg-slate-50/80 dark:bg-slate-900/40 rounded-xl text-xs space-y-1.5 border border-slate-100 dark:border-slate-800">
