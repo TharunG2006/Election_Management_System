@@ -41,3 +41,6 @@ DB File/
 # Other
 coverage/
 .nyc_output/
+*.docx
+DATABASE_SCHEMA_EXAMPLE.md
+ELECTION_SYSTEM_SCHEMA.md

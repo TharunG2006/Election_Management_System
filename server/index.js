@@ -9,12 +9,24 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const rateLimit = require('express-rate-limit');
+const { v2: cloudinary } = require('cloudinary');
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 const { 
   generateElectionAnnouncementEmail, 
   generateSeconderConsentEmail, 
   generateSeconderConfirmationPage,
   generateNomineeConsentEmail,
-  generateNomineeConfirmationPage
+  generateNomineeConfirmationPage,
+  generateVotingReminderEmail,
+  generateVotingLiveEmail,
+  generateVoteConfirmationEmail,
+  generateScrutinyApprovalEmail,
+  generateCandidatesPublishedEmail
 } = require('./electionEmailTemplate');
 
 const app = express();
@@ -55,31 +67,16 @@ async function resolveNomineePhotoUrl(photoDataUrl) {
   if (photoDataUrl.startsWith('http://') || photoDataUrl.startsWith('https://')) {
     return photoDataUrl;
   }
-  const matches = photoDataUrl.match(/^data:([^;]+);base64,(.+)$/);
-  if (!matches) return null;
-  const [, mimeType, base64Data] = matches;
-  const ext = (mimeType.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
-
+  
   try {
-    const buffer = Buffer.from(base64Data, 'base64');
-    const form = new FormData();
-    form.append('reqtype', 'fileupload');
-    const blob = new Blob([buffer], { type: mimeType });
-    form.append('fileToUpload', blob, `nominee_photo.${ext}`);
-
-    const res = await fetch('https://catbox.moe/user/api.php', {
-      method: 'POST',
-      body: form
+    const result = await cloudinary.uploader.upload(photoDataUrl, {
+      folder: 'election_nominees',
+      resource_type: 'image'
     });
-    if (res.ok) {
-      const hostedUrl = (await res.text()).trim();
-      if (hostedUrl.startsWith('http')) {
-        console.log(`[PhotoHost] Nominee photo hosted at: ${hostedUrl}`);
-        return hostedUrl;
-      }
-    }
+    console.log(`[PhotoHost] Nominee photo hosted at: ${result.secure_url}`);
+    return result.secure_url;
   } catch (err) {
-    console.warn("[PhotoHost] Could not upload photo to public host:", err.message);
+    console.warn("[PhotoHost] Could not upload photo to Cloudinary:", err.message);
   }
   return null;
 }
@@ -114,7 +111,8 @@ function buildPhotoAttachment(dataUrl, cid = 'nominee-photo') {
 }
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const uri = process.env.MONGODB_URI;
 const client = new MongoClient(uri);
@@ -724,7 +722,7 @@ const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Generous limit for dev/testing while guarding against brute-force
   message: { error: 'Too many login attempts from this IP. Your IP is temporarily banned for 15 minutes.' },
-  standardHeaders: true, 
+  standardHeaders: true,
   legacyHeaders: false,
 });
 
@@ -790,7 +788,6 @@ app.post('/api/forgot-password/verify', async (req, res) => {
       return res.status(403).json({ error: 'Incorrect verification details.' });
     }
 
-    // Verify Graduation Year
     const hasMatchingGradYear = alumniMember.education_details?.some(
       (ed) => String(ed.end_year) === String(graduationYear)
     );
@@ -798,7 +795,6 @@ app.post('/api/forgot-password/verify', async (req, res) => {
       return res.status(403).json({ error: 'Incorrect verification details.' });
     }
 
-    // Check if user exists in the users table
     const existingUser = await db.collection('users').findOne({ email });
     if (!existingUser) {
       return res.status(404).json({ error: 'Account not found. You need to sign up first.' });
@@ -1944,6 +1940,50 @@ app.patch('/api/applications/:id/scrutiny', authenticateToken, requireAdmin, asy
       return res.status(404).json({ error: 'Application not found' });
     }
 
+    // --- SEND SCRUTINY APPROVAL EMAIL ---
+    if (status === 'approved') {
+      try {
+        const application = await db.collection('applications').findOne({ _id: new ObjectId(id) });
+        if (application) {
+          const rawAnnouncement = await db.collection('announcements').findOne({}, { sort: { updatedAt: -1 } });
+          const announcement = { ...DEFAULT_ANNOUNCEMENT, ...(rawAnnouncement || {}) };
+          
+          const smtpPass = (process.env.SMTP_PASS || '').trim().replace(/\s+/g, '');
+          const smtpUser = (process.env.SMTP_USER || 'muralisubbu11@gmail.com').trim();
+          
+          if (smtpPass) {
+            const transporter = nodemailer.createTransport({
+              service: 'gmail',
+              auth: { user: smtpUser, pass: smtpPass },
+              tls: { rejectUnauthorized: false }
+            });
+            
+            const nomineeEmail = application.nominee?.email || application.applicantEmail;
+            const nomineeName = application.nominee?.name || application.name;
+            const targetPositions = application.targetPositions || [application.position];
+            
+            const { subject, html } = generateScrutinyApprovalEmail({
+              nomineeName,
+              targetPositions,
+              announcement
+            });
+            
+            const senderAddress = process.env.SMTP_FROM || `"Alumni Election Commission" <${smtpUser}>`;
+            
+            await transporter.sendMail({
+              from: senderAddress,
+              to: nomineeEmail,
+              subject,
+              html
+            });
+            console.log(`[Scrutiny] Approval email sent to nominee: ${nomineeEmail}`);
+          }
+        }
+      } catch (emailErr) {
+        console.error('[Scrutiny] Failed to send approval email:', emailErr.message);
+      }
+    }
+
     res.json({ success: true, message: `Application ${status} by Scrutiny Committee`, scrutinyDetails });
   } catch (err) {
     console.error(err);
@@ -1984,7 +2024,9 @@ app.patch('/api/applications/:id/withdraw', async (req, res) => {
 // Publication of Final List of Candidates
 app.get('/api/elections/final-list', async (req, res) => {
   try {
+    const config = await db.collection('voting_config').findOne({}) || { status: 'not_started', candidatesPublished: false };
     const position = req.query.position;
+    
     let query = {
       status: 'approved',
       withdrawn: { $ne: true }
@@ -1993,13 +2035,15 @@ app.get('/api/elections/final-list', async (req, res) => {
       query.targetPositions = position;
     }
 
-    const finalCandidates = await db.collection('applications')
+    let finalCandidates = await db.collection('applications')
       .find(query)
       .sort({ 'targetPositions.0': 1, name: 1 })
       .toArray();
 
+    // Frontend will hide candidates for non-admins if isPublished is false
     res.json({
-      publishedAt: new Date(),
+      isPublished: !!config.candidatesPublished,
+      publishedAt: config.publishedAt || null,
       certificationNotice: "Official Final List of Eligible Candidates certified and published by the Scrutiny Committee. All committee decisions are final and binding.",
       committeeOfficers: [
         "Principal / Patron",
@@ -2012,6 +2056,85 @@ app.get('/api/elections/final-list', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch final candidate list' });
+  }
+});
+
+// POST Publish Final List and Email All Alumni (Admin Only)
+app.post('/api/elections/unpublish-final-list', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await db.collection('voting_config').updateOne(
+      {},
+      { $set: { candidatesPublished: false, publishedAt: null } },
+      { upsert: true }
+    );
+    res.json({ success: true, message: 'Final list unpublished and locked.' });
+  } catch (error) {
+    console.error('Error unpublishing final list:', error);
+    res.status(500).json({ error: 'Server error during unpublishing' });
+  }
+});
+
+app.post('/api/elections/publish-final-list', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { electionYear = '2026', appUrl = 'http://localhost:5173' } = req.body;
+    
+    // Update config
+    await db.collection('voting_config').updateOne(
+      {},
+      { $set: { candidatesPublished: true, publishedAt: new Date() } },
+      { upsert: true }
+    );
+    
+    // Send emails in background
+    (async () => {
+      try {
+        const smtpPass = (process.env.SMTP_PASS || '').trim().replace(/\s+/g, '');
+        const smtpUser = (process.env.SMTP_USER || 'muralisubbu11@gmail.com').trim();
+        if (!smtpPass) {
+          console.warn('[Publishing] SMTP credentials missing. Skipping emails.');
+          return;
+        }
+
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: { user: smtpUser, pass: smtpPass },
+          tls: { rejectUnauthorized: false }
+        });
+
+        const members = await db.collection('members').find({
+          "basic.email_id": { $in: ['tarun.ganapathi2007@gmail.com', 'infintygaming28@gmail.com'] }
+        }).toArray();
+        let sentCount = 0;
+        const senderAddress = process.env.SMTP_FROM || `"Alumni Election Commission" <${smtpUser}>`;
+
+        for (const member of members) {
+          const email = member.basic?.email_id;
+          const name = member.basic?.name || 'Esteemed Alumnus';
+          if (!email) continue;
+          
+          try {
+            const { subject, html } = generateCandidatesPublishedEmail({
+              recipientName: name,
+              electionYear,
+              appUrl
+            });
+            await transporter.sendMail({ from: senderAddress, to: email, subject, html });
+            sentCount++;
+          } catch (e) {
+            console.error(`[Publishing] Email failed for ${email}`, e.message);
+          }
+          await new Promise(r => setTimeout(r, 200)); // Rate limit
+        }
+        console.log(`[Publishing] Finished sending publish announcements. Sent to ${sentCount} alumni.`);
+      } catch (err) {
+        console.error('[Publishing] Error during broadcast:', err.message);
+      }
+    })();
+
+    res.json({ success: true, message: 'Final list published. Emails are being sent in the background.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to publish final list' });
   }
 });
 
@@ -2102,3 +2225,456 @@ app.delete('/api/applications/:id', authenticateToken, requireAdmin, async (req,
   }
 });
 
+// ============================================================
+// VOTING SYSTEM API ROUTES
+// ============================================================
+
+const ELECTION_POSITIONS = [
+  "President", "Vice President", "Secretary",
+  "Joint Secretary", "Treasurer", "Joint Treasurer"
+];
+
+// Helper: get candidate summary per position
+async function getCandidateSummary() {
+  const approved = await db.collection('applications').find({
+    status: 'approved', withdrawn: { $ne: true }
+  }).toArray();
+  const summary = ELECTION_POSITIONS.map(pos => ({
+    position: pos,
+    count: approved.filter(a => (a.targetPositions || []).includes(pos)).length
+  }));
+  return summary;
+}
+
+// Helper: send voting broadcast email to ALL alumni
+async function sendVotingBroadcast(emailGenerator, announcement, candidateSummary) {
+  const smtpPass = (process.env.SMTP_PASS || '').trim().replace(/\s+/g, '');
+  const smtpUser = (process.env.SMTP_USER || 'muralisubbu11@gmail.com').trim();
+  if (!smtpPass) {
+    console.warn('[Voting] SMTP_PASS not configured, skipping email broadcast');
+    return { sent: 0, failed: 0 };
+  }
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: smtpUser, pass: smtpPass },
+    tls: { rejectUnauthorized: false }
+  });
+
+  const alumniList = await db.collection('users').find({
+    email: { $in: ['tarun.ganapathi2007@gmail.com', 'infintygaming28@gmail.com'] }
+  }).toArray();
+
+  const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+  const senderAddress = process.env.SMTP_FROM || `"Alumni Election Commission" <${smtpUser}>`;
+  let sent = 0, failed = 0;
+
+  for (const user of alumniList) {
+    const email = (user.email || '').trim().toLowerCase();
+    if (!email) continue;
+    try {
+      const { subject, html } = emailGenerator({
+        announcement,
+        recipientName: user.name || 'Esteemed Alumni Member',
+        recipientEmail: email,
+        recipientDept: user.department || '',
+        recipientBatch: user.graduationYear || '',
+        portalUrl,
+        candidateSummary
+      });
+      await transporter.sendMail({
+        from: senderAddress,
+        to: email,
+        subject,
+        html
+      });
+      sent++;
+    } catch (err) {
+      console.error(`[Voting] Failed to send to ${email}:`, err.message);
+      failed++;
+    }
+  }
+
+  return { sent, failed, total: alumniList.length };
+}
+
+// 1. GET voting status
+app.get('/api/elections/voting/status', optionalAuth, async (req, res) => {
+  try {
+    const config = await db.collection('voting_config').findOne({}) || { status: 'not_started' };
+    res.json({
+      status: config.status || 'not_started',
+      openedAt: config.openedAt || null,
+      closedAt: config.closedAt || null,
+      reminderSentAt: config.reminderSentAt || null
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to get voting status' });
+  }
+});
+
+// 2. POST open voting (Admin) — also broadcasts "Voting Live" email to ALL alumni
+app.post('/api/elections/voting/open', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const existing = await db.collection('voting_config').findOne({});
+    if (existing && existing.status === 'live') {
+      return res.status(400).json({ error: 'Voting is already live.' });
+    }
+
+    // Ensure unique index on votes
+    try {
+      await db.collection('votes').createIndex(
+        { voterEmail: 1, position: 1 },
+        { unique: true }
+      );
+    } catch (e) { /* index may already exist */ }
+
+    await db.collection('voting_config').updateOne(
+      {},
+      {
+        $set: {
+          status: 'live',
+          openedAt: new Date(),
+          openedBy: req.user.email,
+          closedAt: null,
+          closedBy: null
+        }
+      },
+      { upsert: true }
+    );
+
+    // Broadcast "Voting is Live" email to ALL alumni
+    const rawAnnouncement = await db.collection('announcements').findOne({}, { sort: { updatedAt: -1 } });
+    const announcement = { ...DEFAULT_ANNOUNCEMENT, ...(rawAnnouncement || {}) };
+    const candidateSummary = await getCandidateSummary();
+
+    const broadcastResult = await sendVotingBroadcast(
+      generateVotingLiveEmail,
+      announcement,
+      candidateSummary
+    );
+
+    console.log(`[Voting] Opened. Broadcast sent: ${broadcastResult.sent}/${broadcastResult.total}`);
+
+    res.json({
+      success: true,
+      message: 'Voting is now LIVE. Broadcast email sent to all alumni.',
+      broadcast: broadcastResult
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to open voting' });
+  }
+});
+
+// 3. POST close voting (Admin)
+app.post('/api/elections/voting/close', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    await db.collection('voting_config').updateOne(
+      {},
+      {
+        $set: {
+          status: 'closed',
+          closedAt: new Date(),
+          closedBy: req.user.email
+        }
+      },
+      { upsert: true }
+    );
+
+    res.json({ success: true, message: 'Voting has been closed.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to close voting' });
+  }
+});
+
+// 4. GET ballot — approved candidates grouped by position
+app.get('/api/elections/voting/ballot', authenticateToken, async (req, res) => {
+  try {
+    const config = await db.collection('voting_config').findOne({}) || { status: 'not_started' };
+
+    const candidates = await db.collection('applications').find({
+      status: 'approved',
+      withdrawn: { $ne: true }
+    }).toArray();
+
+    const ballot = ELECTION_POSITIONS.map(pos => ({
+      position: pos,
+      candidates: candidates
+        .filter(c => (c.targetPositions || []).includes(pos))
+        .map(c => ({
+          _id: c._id,
+          name: c.nominee?.name || c.name || '',
+          email: c.nominee?.email || c.applicantEmail || '',
+          department: c.nominee?.department || c.department || '',
+          graduationYear: c.nominee?.graduationYear || c.graduationYear || '',
+          photo: c.nomineePhoto || null,
+          purposeStatement: c.purposeStatement || '',
+          previousRoles: c.previousRoles || [],
+          roleCategory: c.roleCategory || ''
+        }))
+    }));
+
+    res.json({
+      votingStatus: config.status || 'not_started',
+      ballot
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to get ballot' });
+  }
+});
+
+// 5. POST cast vote
+app.post('/api/elections/voting/cast', authenticateToken, async (req, res) => {
+  try {
+    // Admin cannot vote
+    if (req.user.role === 'admin') {
+      return res.status(403).json({ error: 'Administrators are not eligible to vote.' });
+    }
+
+    const config = await db.collection('voting_config').findOne({});
+    if (!config || config.status !== 'live') {
+      return res.status(400).json({ error: 'Voting is not currently open.' });
+    }
+
+    const { position, candidateId } = req.body;
+
+    if (!position || !ELECTION_POSITIONS.includes(position)) {
+      return res.status(400).json({ error: 'Invalid position.' });
+    }
+
+    if (!candidateId) {
+      return res.status(400).json({ error: 'Candidate selection is required.' });
+    }
+
+    // Verify candidate is approved for this position
+    const candidate = await db.collection('applications').findOne({
+      _id: new ObjectId(candidateId),
+      status: 'approved',
+      withdrawn: { $ne: true },
+      targetPositions: position
+    });
+
+    if (!candidate) {
+      return res.status(400).json({ error: 'Selected candidate is not valid for this position.' });
+    }
+
+    // Check if already fully voted (all 6 positions)
+    const existingVotes = await db.collection('votes').countDocuments({
+      voterEmail: req.user.email
+    });
+    if (existingVotes >= ELECTION_POSITIONS.length) {
+      return res.status(400).json({ error: 'You have already cast all your votes. Your ballot is sealed.' });
+    }
+
+    // Insert vote (unique index prevents duplicate position votes)
+    try {
+      await db.collection('votes').insertOne({
+        voterId: req.user._id,
+        voterEmail: req.user.email,
+        voterName: req.user.name,
+        position,
+        candidateId: new ObjectId(candidateId),
+        candidateName: candidate.nominee?.name || candidate.name || '',
+        votedAt: new Date()
+      });
+    } catch (dupErr) {
+      if (dupErr.code === 11000) {
+        return res.status(400).json({ error: `You have already voted for the ${position} position.` });
+      }
+      throw dupErr;
+    }
+
+    // Check if all positions are now voted
+    const totalVotes = await db.collection('votes').countDocuments({
+      voterEmail: req.user.email
+    });
+
+    const allVoted = totalVotes >= ELECTION_POSITIONS.length;
+
+    // If all 6 votes cast, send confirmation email
+    if (allVoted) {
+      try {
+        const smtpPass = (process.env.SMTP_PASS || '').trim().replace(/\s+/g, '');
+        const smtpUser = (process.env.SMTP_USER || 'muralisubbu11@gmail.com').trim();
+        if (smtpPass) {
+          const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: { user: smtpUser, pass: smtpPass },
+            tls: { rejectUnauthorized: false }
+          });
+          const rawAnnouncement = await db.collection('announcements').findOne({}, { sort: { updatedAt: -1 } });
+          const announcement = { ...DEFAULT_ANNOUNCEMENT, ...(rawAnnouncement || {}) };
+          const voteSummary = ELECTION_POSITIONS.map(p => ({ position: p }));
+          const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+          const { subject, html } = generateVoteConfirmationEmail({
+            announcement,
+            recipientName: req.user.name || 'Esteemed Alumni Member',
+            recipientEmail: req.user.email,
+            recipientDept: req.user.department || '',
+            recipientBatch: req.user.graduationYear || '',
+            voteSummary,
+            portalUrl
+          });
+          const senderAddress = process.env.SMTP_FROM || `"Alumni Election Commission" <${smtpUser}>`;
+          await transporter.sendMail({
+            from: senderAddress,
+            to: req.user.email,
+            subject,
+            html
+          });
+          console.log(`[Voting] Confirmation email sent to ${req.user.email}`);
+        }
+      } catch (emailErr) {
+        console.error('[Voting] Failed to send confirmation email:', emailErr.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Vote for ${position} recorded successfully.`,
+      totalVotes,
+      allVoted,
+      ballotSealed: allVoted
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to cast vote' });
+  }
+});
+
+// 6. GET my votes
+app.get('/api/elections/voting/my-votes', authenticateToken, async (req, res) => {
+  try {
+    const votes = await db.collection('votes').find({
+      voterEmail: req.user.email
+    }).toArray();
+
+    const votedPositions = votes.map(v => v.position);
+    const allVoted = votedPositions.length >= ELECTION_POSITIONS.length;
+
+    res.json({
+      votes: votes.map(v => ({
+        position: v.position,
+        candidateId: v.candidateId,
+        candidateName: v.candidateName,
+        votedAt: v.votedAt
+      })),
+      votedPositions,
+      totalVoted: votedPositions.length,
+      totalPositions: ELECTION_POSITIONS.length,
+      allVoted,
+      ballotSealed: allVoted
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to get your votes' });
+  }
+});
+
+// 7. GET results (Admin only while live; everyone after closed)
+app.get('/api/elections/voting/results', optionalAuth, async (req, res) => {
+  try {
+    const config = await db.collection('voting_config').findOne({}) || { status: 'not_started' };
+    const isAdmin = req.user && req.user.role === 'admin';
+
+    // Only admin can see results while voting is live
+    if (config.status === 'live' && !isAdmin) {
+      return res.status(403).json({ error: 'Results are not available while voting is in progress.' });
+    }
+
+    if (config.status === 'not_started' && !isAdmin) {
+      return res.status(400).json({ error: 'Voting has not started yet.' });
+    }
+
+    const allVotes = await db.collection('votes').find({}).toArray();
+    const uniqueVoters = new Set(allVotes.map(v => v.voterEmail)).size;
+    const totalAlumni = await db.collection('users').countDocuments({ email: { $ne: ADMIN_EMAIL } });
+
+    const results = ELECTION_POSITIONS.map(pos => {
+      const posVotes = allVotes.filter(v => v.position === pos);
+      const tally = {};
+      posVotes.forEach(v => {
+        const key = v.candidateId.toString();
+        if (!tally[key]) {
+          tally[key] = { candidateId: key, candidateName: v.candidateName, votes: 0 };
+        }
+        tally[key].votes++;
+      });
+      const candidates = Object.values(tally).sort((a, b) => b.votes - a.votes);
+      const maxVotes = candidates.length > 0 ? candidates[0].votes : 0;
+      const isTied = candidates.filter(c => c.votes === maxVotes).length > 1 && maxVotes > 0;
+
+      return {
+        position: pos,
+        totalVotes: posVotes.length,
+        candidates,
+        winner: !isTied && candidates.length > 0 ? candidates[0] : null,
+        isTied
+      };
+    });
+
+    res.json({
+      votingStatus: config.status,
+      totalVotesCast: allVotes.length,
+      uniqueVoters,
+      totalAlumni,
+      turnoutPercent: totalAlumni > 0 ? Math.round((uniqueVoters / totalAlumni) * 100) : 0,
+      results
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to get results' });
+  }
+});
+
+app.post('/api/elections/voting/clear-all-votes', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await db.collection('votes').deleteMany({});
+    await db.collection('voting_config').updateOne(
+      {},
+      { $set: { status: 'not_started' } },
+      { upsert: true }
+    );
+    res.json({ success: true, message: `Successfully cleared ${result.deletedCount} votes and reset voting status to 'Not Started'.` });
+  } catch (err) {
+    console.error('Error clearing votes:', err);
+    res.status(500).json({ error: 'Failed to clear votes' });
+  }
+});
+
+// 8. POST send reminder email (Admin) — sends to ALL alumni
+app.post('/api/elections/voting/send-reminder', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const rawAnnouncement = await db.collection('announcements').findOne({}, { sort: { updatedAt: -1 } });
+    const announcement = { ...DEFAULT_ANNOUNCEMENT, ...(rawAnnouncement || {}) };
+    const candidateSummary = await getCandidateSummary();
+
+    const broadcastResult = await sendVotingBroadcast(
+      generateVotingReminderEmail,
+      announcement,
+      candidateSummary
+    );
+
+    // Record reminder sent timestamp
+    await db.collection('voting_config').updateOne(
+      {},
+      { $set: { reminderSentAt: new Date() } },
+      { upsert: true }
+    );
+
+    console.log(`[Voting] Reminder broadcast: ${broadcastResult.sent}/${broadcastResult.total}`);
+
+    res.json({
+      success: true,
+      message: `Election reminder sent to ${broadcastResult.sent} alumni members.`,
+      broadcast: broadcastResult
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to send reminder' });
+  }
+});

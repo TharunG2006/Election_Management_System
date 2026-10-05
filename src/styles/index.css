@@ -1,3 +1,6 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+.nav-scroll-container::-webkit-scrollbar { display: none; }
+.nav-scroll-container { scrollbar-width: none; -ms-overflow-style: none; }
