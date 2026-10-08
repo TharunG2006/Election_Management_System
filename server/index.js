@@ -2044,6 +2044,7 @@ app.get('/api/elections/final-list', async (req, res) => {
     res.json({
       isPublished: !!config.candidatesPublished,
       publishedAt: config.publishedAt || null,
+      notifiedAt: config.candidatesNotifiedAt || null,
       certificationNotice: "Official Final List of Eligible Candidates certified and published by the Scrutiny Committee. All committee decisions are final and binding.",
       committeeOfficers: [
         "Principal / Patron",
@@ -2059,7 +2060,7 @@ app.get('/api/elections/final-list', async (req, res) => {
   }
 });
 
-// POST Publish Final List and Email All Alumni (Admin Only)
+// POST Unpublish Final List (Admin Only)
 app.post('/api/elections/unpublish-final-list', authenticateToken, requireAdmin, async (req, res) => {
   try {
     await db.collection('voting_config').updateOne(
@@ -2074,24 +2075,43 @@ app.post('/api/elections/unpublish-final-list', authenticateToken, requireAdmin,
   }
 });
 
+// POST Publish Final List (Admin Only - Makes list visible on portal, does NOT send emails)
 app.post('/api/elections/publish-final-list', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { electionYear = '2026', appUrl = 'http://localhost:5173' } = req.body;
-    
-    // Update config
+    // Update config: marks candidates list as published
     await db.collection('voting_config').updateOne(
       {},
       { $set: { candidatesPublished: true, publishedAt: new Date() } },
       { upsert: true }
     );
-    
+
+    res.json({ success: true, message: 'Final candidate list published successfully. It is now visible to alumni.' });
+  } catch (error) {
+    console.error('Error publishing final list:', error);
+    res.status(500).json({ error: 'Failed to publish final list' });
+  }
+});
+
+// POST Notify All Alumni (Admin Only - Separate email broadcast for final candidate list)
+app.post('/api/elections/notify-final-list', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { electionYear = '2026', appUrl = 'http://localhost:5173' } = req.body;
+    const notifiedAt = new Date();
+
+    // Record notification timestamp in config
+    await db.collection('voting_config').updateOne(
+      {},
+      { $set: { candidatesNotifiedAt: notifiedAt } },
+      { upsert: true }
+    );
+
     // Send emails in background
     (async () => {
       try {
         const smtpPass = (process.env.SMTP_PASS || '').trim().replace(/\s+/g, '');
         const smtpUser = (process.env.SMTP_USER || 'muralisubbu11@gmail.com').trim();
         if (!smtpPass) {
-          console.warn('[Publishing] SMTP credentials missing. Skipping emails.');
+          console.warn('[Notify Alumni] SMTP credentials missing. Skipping emails.');
           return;
         }
 
@@ -2121,20 +2141,20 @@ app.post('/api/elections/publish-final-list', authenticateToken, requireAdmin, a
             await transporter.sendMail({ from: senderAddress, to: email, subject, html });
             sentCount++;
           } catch (e) {
-            console.error(`[Publishing] Email failed for ${email}`, e.message);
+            console.error(`[Notify Alumni] Email failed for ${email}`, e.message);
           }
           await new Promise(r => setTimeout(r, 200)); // Rate limit
         }
-        console.log(`[Publishing] Finished sending publish announcements. Sent to ${sentCount} alumni.`);
+        console.log(`[Notify Alumni] Finished sending candidate announcements. Sent to ${sentCount} alumni.`);
       } catch (err) {
-        console.error('[Publishing] Error during broadcast:', err.message);
+        console.error('[Notify Alumni] Error during broadcast:', err.message);
       }
     })();
 
-    res.json({ success: true, message: 'Final list published. Emails are being sent in the background.' });
+    res.json({ success: true, message: 'Announcement emails are being sent in the background.', notifiedAt });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to publish final list' });
+    console.error('Error notifying alumni:', error);
+    res.status(500).json({ error: 'Failed to broadcast announcement emails' });
   }
 });
 
@@ -2306,7 +2326,8 @@ app.get('/api/elections/voting/status', optionalAuth, async (req, res) => {
       status: config.status || 'not_started',
       openedAt: config.openedAt || null,
       closedAt: config.closedAt || null,
-      reminderSentAt: config.reminderSentAt || null
+      reminderSentAt: config.reminderSentAt || null,
+      notifyLiveSentAt: config.notifyLiveSentAt || null
     });
   } catch (err) {
     console.error(err);
@@ -2314,7 +2335,7 @@ app.get('/api/elections/voting/status', optionalAuth, async (req, res) => {
   }
 });
 
-// 2. POST open voting (Admin) — also broadcasts "Voting Live" email to ALL alumni
+// 2. POST open voting (Admin)
 app.post('/api/elections/voting/open', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const existing = await db.collection('voting_config').findOne({});
@@ -2344,7 +2365,16 @@ app.post('/api/elections/voting/open', authenticateToken, requireAdmin, async (r
       { upsert: true }
     );
 
-    // Broadcast "Voting is Live" email to ALL alumni
+    // If skipBroadcast is requested, simply open voting without blasting email
+    if (req.body?.skipBroadcast === true) {
+      console.log(`[Voting] Opened by ${req.user.email} (notification separated).`);
+      return res.json({
+        success: true,
+        message: 'Voting is now LIVE. Ballot is open for alumni members.'
+      });
+    }
+
+    // Broadcast "Voting is Live" email to ALL alumni (when explicitly requested or default)
     const rawAnnouncement = await db.collection('announcements').findOne({}, { sort: { updatedAt: -1 } });
     const announcement = { ...DEFAULT_ANNOUNCEMENT, ...(rawAnnouncement || {}) };
     const candidateSummary = await getCandidateSummary();
@@ -2353,6 +2383,12 @@ app.post('/api/elections/voting/open', authenticateToken, requireAdmin, async (r
       generateVotingLiveEmail,
       announcement,
       candidateSummary
+    );
+
+    await db.collection('voting_config').updateOne(
+      {},
+      { $set: { notifyLiveSentAt: new Date() } },
+      { upsert: true }
     );
 
     console.log(`[Voting] Opened. Broadcast sent: ${broadcastResult.sent}/${broadcastResult.total}`);
@@ -2365,6 +2401,38 @@ app.post('/api/elections/voting/open', authenticateToken, requireAdmin, async (r
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to open voting' });
+  }
+});
+
+// 2b. POST notify alumni that voting is live (Admin - Separate Broadcast)
+app.post('/api/elections/voting/notify-alumni', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const rawAnnouncement = await db.collection('announcements').findOne({}, { sort: { updatedAt: -1 } });
+    const announcement = { ...DEFAULT_ANNOUNCEMENT, ...(rawAnnouncement || {}) };
+    const candidateSummary = await getCandidateSummary();
+
+    const broadcastResult = await sendVotingBroadcast(
+      generateVotingLiveEmail,
+      announcement,
+      candidateSummary
+    );
+
+    await db.collection('voting_config').updateOne(
+      {},
+      { $set: { notifyLiveSentAt: new Date() } },
+      { upsert: true }
+    );
+
+    console.log(`[Voting] Live broadcast: ${broadcastResult.sent}/${broadcastResult.total}`);
+
+    res.json({
+      success: true,
+      message: `Voting announcement sent to ${broadcastResult.sent} alumni members.`,
+      broadcast: broadcastResult
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to broadcast voting announcement' });
   }
 });
 
