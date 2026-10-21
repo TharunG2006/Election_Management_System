@@ -53,7 +53,7 @@ function generateLegacyElectionAnnouncementEmail({
   recipientEmail = '',
   recipientDept = '',
   recipientBatch = '',
-  portalUrl = 'http://localhost:5173'
+  portalUrl = 'https://election-management-system-rho.vercel.app'
 }) {
   const notifNumber = announcement.notificationNumber || announcement.referenceNumber || 'AA/ELEC/2026/01';
   const title = announcement.title || 'Alumni Association General Election 2026';
@@ -352,7 +352,7 @@ function generateLegacySeconderConsentEmail({
   nomineePhoto = null,
   consentToken = '',
   consentExpiresAt = null,
-  portalUrl = 'http://localhost:5173',
+  portalUrl = 'https://election-management-system-rho.vercel.app',
   apiBaseUrl = 'http://localhost:5000'
 }) {
   const positionsStr = Array.isArray(targetPositions) ? targetPositions.join(', ') : (targetPositions || 'Office Bearer');
@@ -534,7 +534,7 @@ function generateSeconderConfirmationPage({
   proposerName = '',
   positions = [],
   errorMessage = '',
-  portalUrl = 'http://localhost:5173'
+  portalUrl = 'https://election-management-system-rho.vercel.app'
 }) {
   const positionsStr = Array.isArray(positions) ? positions.join(', ') : (positions || 'Office Bearer');
   const isAccepted = decision === 'accept' || decision === 'accepted';
@@ -664,7 +664,7 @@ function generateLegacyNomineeConsentEmail({
   purposeStatement = '',
   nomineePhoto = null,
   consentToken = '',
-  portalUrl = 'http://localhost:5173',
+  portalUrl = 'https://election-management-system-rho.vercel.app',
   apiBaseUrl = 'http://localhost:5000'
 }) {
   const positionsStr = Array.isArray(targetPositions) ? targetPositions.join(', ') : (targetPositions || 'Office Bearer');
@@ -832,7 +832,7 @@ function generateNomineeConfirmationPage({
   seconderName = '',
   positions = [],
   errorMessage = '',
-  portalUrl = 'http://localhost:5173'
+  portalUrl = 'https://election-management-system-rho.vercel.app'
 }) {
   const positionsStr = Array.isArray(positions) ? positions.join(', ') : (positions || 'Office Bearer');
   const isAccepted = decision === 'accept' || decision === 'accepted';
@@ -1105,7 +1105,7 @@ function renderCandidateSummaryRows(candidateSummary = []) {
 function generateCandidatesPublishedEmail({
   recipientName = 'Esteemed Alumnus',
   electionYear = '2026',
-  appUrl = 'http://localhost:5173'
+  appUrl = 'https://election-management-system-rho.vercel.app'
 }) {
   const year = String(electionYear || '2026');
   const tenure = `${year}–${Number(year) + 2}`;
@@ -1171,7 +1171,7 @@ function generateVotingReminderEmail({
   recipientEmail = '',
   recipientDept = '',
   recipientBatch = '',
-  portalUrl = 'http://localhost:5173',
+  portalUrl = 'https://election-management-system-rho.vercel.app',
   candidateSummary = []
 }) {
   const year = announcement.electionYear || '2026';
@@ -1245,7 +1245,7 @@ function generateVoting1DayReminderEmail({
   recipientEmail = '',
   recipientDept = '',
   recipientBatch = '',
-  portalUrl = 'http://localhost:5173',
+  portalUrl = 'https://election-management-system-rho.vercel.app',
   candidateSummary = []
 }) {
   const year = announcement.electionYear || '2026';
@@ -1315,7 +1315,7 @@ function generateVotingLiveEmail({
   recipientEmail = '',
   recipientDept = '',
   recipientBatch = '',
-  portalUrl = 'http://localhost:5173',
+  portalUrl = 'https://election-management-system-rho.vercel.app',
   candidateSummary = []
 }) {
   const year = announcement.electionYear || '2026';
@@ -1386,7 +1386,7 @@ function generateVoteConfirmationEmail({
   recipientDept = '',
   recipientBatch = '',
   voteSummary = [],
-  portalUrl = 'http://localhost:5173'
+  portalUrl = 'https://election-management-system-rho.vercel.app'
 }) {
   const year = announcement.electionYear || '2026';
   const tenure = `${year}–${Number(year) + 2}`;
@@ -1512,7 +1512,7 @@ function generateScrutinyApprovalEmail({
     detailsHtml,
     actionTitle: 'Review your candidacy on the portal',
     actionButtonText: 'Open Election Portal',
-    actionUrl: 'http://localhost:5173',
+    actionUrl: 'https://election-management-system-rho.vercel.app',
     subNoteText: 'We wish you the very best in the upcoming election.'
   });
 }

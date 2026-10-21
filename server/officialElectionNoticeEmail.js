@@ -37,11 +37,11 @@ function formatOfficialDate(value, fallback) {
 
 function safePortalUrl(value) {
   try {
-    const parsed = new URL(value || 'http://localhost:5173');
+    const parsed = new URL(value || 'https://election-management-system-rho.vercel.app');
     if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Unsupported protocol');
     return parsed.toString().replace(/\/$/, '');
   } catch {
-    return 'http://localhost:5173';
+    return 'https://election-management-system-rho.vercel.app';
   }
 }
 
@@ -95,7 +95,7 @@ function generateElectionAnnouncementEmail({
   recipientEmail = '',
   recipientDept = '',
   recipientBatch = '',
-  portalUrl = 'http://localhost:5173',
+  portalUrl = 'https://election-management-system-rho.vercel.app',
   logoSource = ''
 }) {
   const year = String(announcement.electionYear || announcement.year || new Date().getFullYear());

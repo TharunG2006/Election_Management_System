@@ -75,7 +75,7 @@ function generateNomineeConsentEmail({
   nomineePhoto = null,
   consentToken = '',
   consentExpiresAt = null,
-  portalUrl = 'http://localhost:5173',
+  portalUrl = 'https://election-management-system-rho.vercel.app',
   apiBaseUrl = 'http://localhost:5000'
 }) {
   const positions = formatPositions(targetPositions);

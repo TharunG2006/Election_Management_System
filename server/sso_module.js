@@ -52,7 +52,7 @@ module.exports = function registerSSORoutes(app, getDb, ADMIN_EMAIL, JWT_SECRET)
     try {
       const cleanEmail = email.trim().toLowerCase();
       const encodedEmail = Buffer.from(cleanEmail).toString('base64');
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const frontendUrl = (process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://election-management-system-rho.vercel.app').replace(/\/+$/, '');
       console.log(`[SSO] Verified ${cleanEmail}, redirecting to frontend dashboard`);
       return res.redirect(302, `${frontendUrl}/?sso_email=${encodeURIComponent(encodedEmail)}&email=${encodeURIComponent(cleanEmail)}`);
     } catch (err) {

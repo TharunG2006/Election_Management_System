@@ -33,6 +33,7 @@ const {
 
 const app = express();
 const port = process.env.PORT || 5000;
+const CLIENT_PORTAL_URL = (process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://election-management-system-rho.vercel.app').replace(/\/+$/, '');
 const ELECTION_EMAIL_LOGO_PATH = path.join(__dirname, '..', 'public', 'nec-logo.png');
 const DEFAULT_ELECTION_EMAIL_LOGO_URL = 'https://raw.githubusercontent.com/TharunG2006/Election_Management_System/main/public/nec-logo.png';
 
@@ -1036,7 +1037,7 @@ app.post('/api/elections/announcement/send-email', authenticateToken, requireAdm
       recipients = allAlumni.map(a => ({ email: a.email, user: a }));
     }
 
-    const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const portalUrl = CLIENT_PORTAL_URL;
     const electionLogoSource = process.env.ELECTION_EMAIL_LOGO_URL || DEFAULT_ELECTION_EMAIL_LOGO_URL;
 
     // Configure Live Gmail Mailer (Strictly real emails from muralisubbu11@gmail.com)
@@ -1166,7 +1167,7 @@ const handleEmailPreview = async (req, res) => {
       ...(rawAnnouncement || {}),
       ...(req.body || {})
     };
-    const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const portalUrl = CLIENT_PORTAL_URL;
     const logoSource = fs.existsSync(ELECTION_EMAIL_LOGO_PATH)
       ? `data:image/png;base64,${fs.readFileSync(ELECTION_EMAIL_LOGO_PATH).toString('base64')}`
       : `${portalUrl.replace(/\/$/, '')}/nec-logo.png`;
@@ -2010,7 +2011,7 @@ app.post('/api/applications', optionalAuth, async (req, res) => {
     let secondingEmailError = null;
     try {
       const { transporter, senderAddress } = createMailTransporter();
-      const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+      const portalUrl = CLIENT_PORTAL_URL;
       const apiBaseUrl = process.env.SERVER_URL || `http://localhost:${port}`;
 
       // Only public HTTPS images are embedded in email. Base64/CID fallbacks create
@@ -2064,7 +2065,7 @@ app.post('/api/applications', optionalAuth, async (req, res) => {
 app.get('/api/nominations/seconding-consent', async (req, res) => {
   try {
     const { token, decision } = req.query;
-    const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const portalUrl = CLIENT_PORTAL_URL;
     const { effectiveSettings } = await getEffectiveAlumniSettings();
 
     if (!effectiveSettings.apply) {
@@ -2142,7 +2143,7 @@ app.get('/api/nominations/seconding-consent', async (req, res) => {
       { $set: updateFields }
     );
 
-    const portalUrl2 = process.env.CLIENT_URL || 'http://localhost:5173';
+    const portalUrl2 = CLIENT_PORTAL_URL;
     const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:5000';
 
     try {
@@ -2293,7 +2294,7 @@ app.post('/api/nominations/:id/resend-seconding-email', optionalAuth, async (req
       );
     }
 
-    const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const portalUrl = CLIENT_PORTAL_URL;
     const apiBaseUrl = process.env.SERVER_URL || `http://localhost:${port}`;
     const { transporter, senderAddress } = createMailTransporter();
 
@@ -2381,7 +2382,7 @@ app.post('/api/nominations/:id/resend-nominee-email', optionalAuth, async (req, 
       );
     }
 
-    const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const portalUrl = CLIENT_PORTAL_URL;
     const apiBaseUrl = process.env.SERVER_URL || `http://localhost:${port}`;
     const { transporter, senderAddress } = createMailTransporter();
 
@@ -2486,7 +2487,7 @@ app.post('/api/nominations/seconding-consent', optionalAuth, async (req, res) =>
     if (isAccept && nomineeConsentToken) {
       try {
         const { transporter, senderAddress } = createMailTransporter();
-        const portalUrl2 = process.env.CLIENT_URL || 'http://localhost:5173';
+        const portalUrl2 = CLIENT_PORTAL_URL;
         const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:5000';
         const nomineeEmail = application.nominee?.email || application.nomineeEmail;
         if (nomineeEmail) {
@@ -2552,7 +2553,7 @@ app.post('/api/nominations/seconding-consent', optionalAuth, async (req, res) =>
 app.get('/api/nominations/nominee-consent', async (req, res) => {
   try {
     const { token, decision } = req.query;
-    const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const portalUrl = CLIENT_PORTAL_URL;
     const { effectiveSettings } = await getEffectiveAlumniSettings();
 
     if (!effectiveSettings.apply) {
@@ -3037,7 +3038,7 @@ app.post('/api/elections/publish-final-list', authenticateToken, requireAdmin, a
 // POST Notify Alumni (Admin Only - Supports broadcast to all or single recipient)
 app.post('/api/elections/notify-final-list', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { electionYear = '2026', appUrl = 'http://localhost:5173', targetMode = 'all', recipientEmail } = req.body;
+    const { electionYear = '2026', appUrl = CLIENT_PORTAL_URL, targetMode = 'all', recipientEmail } = req.body;
     const notifiedAt = new Date();
 
     if (targetMode === 'single' && (!recipientEmail || !recipientEmail.includes('@'))) {
@@ -3276,7 +3277,7 @@ async function sendVotingBroadcast(emailGenerator, announcement, candidateSummar
     alumniList = allAlumni;
   }
 
-  const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+  const portalUrl = CLIENT_PORTAL_URL;
   const senderAddress = process.env.SMTP_FROM || `"Alumni Election Commission" <${smtpUser}>`;
   let sent = 0, failed = 0;
 
@@ -3596,7 +3597,7 @@ app.post('/api/elections/voting/cast', authenticateToken, async (req, res) => {
           const rawAnnouncement = await db.collection('announcements').findOne({}, { sort: { updatedAt: -1 } });
           const announcement = { ...DEFAULT_ANNOUNCEMENT, ...(rawAnnouncement || {}) };
           const voteSummary = ELECTION_POSITIONS.map(p => ({ position: p }));
-          const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+          const portalUrl = CLIENT_PORTAL_URL;
           const { subject, html } = generateVoteConfirmationEmail({
             announcement,
             recipientName: req.user.name || 'Esteemed Alumni Member',

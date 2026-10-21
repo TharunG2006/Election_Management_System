@@ -17,7 +17,7 @@ const necLogo: string = (necLogoImg as unknown as string) || '/nec-logo.png';
 // Dynamic Backend API URL (uses VITE_API_URL in production, localhost:5000 in dev)
 const BACKEND_URL: string = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL)
   ? String((import.meta as any).env.VITE_API_URL).replace(/\/+$/, '')
-  : 'http://localhost:5000';
+  : 'https://election-management-system-jak7.onrender.com';
 
 
 // === Constants & Authorized Role Categories ===
