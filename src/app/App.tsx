@@ -14,6 +14,11 @@ import {
 import necLogoImg from '../imports/nec-logo.png';
 const necLogo: string = (necLogoImg as unknown as string) || '/nec-logo.png';
 
+// Dynamic Backend API URL (uses VITE_API_URL in production, localhost:5000 in dev)
+const BACKEND_URL: string = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_URL)
+  ? String((import.meta as any).env.VITE_API_URL).replace(/\/+$/, '')
+  : 'http://localhost:5000';
+
 
 // === Constants & Authorized Role Categories ===
 const ELECTION_POSITIONS = [
@@ -855,7 +860,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
     try {
       const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token'));
       const payload = formOverride || editForm;
-      const res = await fetch('http://localhost:5000/api/elections/announcement/email-preview', {
+      const res = await fetch(`${BACKEND_URL}/api/elections/announcement/email-preview`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -907,7 +912,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
   const fetchAnnouncement = () => {
     setLoading(true);
     const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token'));
-    fetch('http://localhost:5000/api/elections/announcement', {
+    fetch(`${BACKEND_URL}/api/elections/announcement`, {
       headers: {
         ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
       }
@@ -957,7 +962,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
   const fetchSmtpStatus = () => {
     const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token'));
     if (!authToken) return;
-    fetch('http://localhost:5000/api/elections/smtp-status', {
+    fetch(`${BACKEND_URL}/api/elections/smtp-status`, {
       headers: { 'Authorization': `Bearer ${authToken}` }
     })
       .then(res => res.json())
@@ -983,7 +988,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
     };
 
     try {
-      const res = await fetch('http://localhost:5000/api/elections/announcement', {
+      const res = await fetch(`${BACKEND_URL}/api/elections/announcement`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1014,7 +1019,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
     if (!confirm("Are you sure you want to delete and reset the current election announcement?")) return;
     const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token'));
     try {
-      const res = await fetch('http://localhost:5000/api/elections/announcement', {
+      const res = await fetch(`${BACKEND_URL}/api/elections/announcement`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${authToken}`
@@ -1069,7 +1074,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
         bodyPayload.smtpPass = smtpPass.trim();
       }
 
-      const res = await fetch('http://localhost:5000/api/elections/announcement/send-email', {
+      const res = await fetch(`${BACKEND_URL}/api/elections/announcement/send-email`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2234,7 +2239,7 @@ const EligibilityScreen = ({ onProceedToApply, isAdmin, publicationSettings, onT
     if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) return;
     setIsFetchingTarget(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/alumni/lookup?email=${encodeURIComponent(cleanEmail)}`);
+      const res = await fetch(`${BACKEND_URL}/api/alumni/lookup?email=${encodeURIComponent(cleanEmail)}`);
       const data = await res.json();
       if (res.ok && data.found && data.alumni) {
         setTargetLookupStatus({
@@ -2830,7 +2835,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess, isAdmin, publicationSet
     }
     setIsFetchingNominee(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/alumni/lookup?email=${encodeURIComponent(cleanEmail)}`);
+      const res = await fetch(`${BACKEND_URL}/api/alumni/lookup?email=${encodeURIComponent(cleanEmail)}`);
       const data = await res.json();
       if (res.ok && data.found && data.alumni) {
         setNominee(prev => ({
@@ -2879,7 +2884,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess, isAdmin, publicationSet
     }
     setIsFetchingSeconder(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/alumni/lookup?email=${encodeURIComponent(cleanEmail)}`);
+      const res = await fetch(`${BACKEND_URL}/api/alumni/lookup?email=${encodeURIComponent(cleanEmail)}`);
       const data = await res.json();
       if (res.ok && data.found && data.alumni) {
         setSeconder(prev => ({
@@ -3042,7 +3047,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess, isAdmin, publicationSet
 
     setIsSubmitting(true);
     try {
-      const res = await fetch('http://localhost:5000/api/applications', {
+      const res = await fetch(`${BACKEND_URL}/api/applications`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -3795,7 +3800,7 @@ const ScrutinyCommitteeScreen = ({ token }: any) => {
 
   const fetchApplications = () => {
     setLoading(true);
-    fetch(`http://localhost:5000/api/applications?status=${filter}&source=scrutiny`, {
+    fetch(`${BACKEND_URL}/api/applications?status=${filter}&source=scrutiny`, {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {}
     })
       .then(res => {
@@ -3826,7 +3831,7 @@ const ScrutinyCommitteeScreen = ({ token }: any) => {
   const handleClearRejectedAndWithdrawn = async () => {
     setIsDeletingNonApproved(true);
     try {
-      const res = await fetch('http://localhost:5000/api/applications/rejected-withdrawn', {
+      const res = await fetch(`${BACKEND_URL}/api/applications/rejected-withdrawn`, {
         method: 'DELETE',
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
@@ -3847,7 +3852,7 @@ const ScrutinyCommitteeScreen = ({ token }: any) => {
 
   const handleScrutinyDecision = async (id: string, status: 'approved' | 'rejected') => {
     try {
-      const res = await fetch(`http://localhost:5000/api/applications/${id}/scrutiny`, {
+      const res = await fetch(`${BACKEND_URL}/api/applications/${id}/scrutiny`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -4322,7 +4327,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply, isAdmin, publicat
   const fetchMyApplications = () => {
     if (userProfile?.email) {
       setLoading(true);
-      fetch(`http://localhost:5000/api/applications?email=${encodeURIComponent(userProfile.email)}&roleType=${nominationView}`, {
+      fetch(`${BACKEND_URL}/api/applications?email=${encodeURIComponent(userProfile.email)}&roleType=${nominationView}`, {
         headers: { 'Authorization': `Bearer ${(sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || ''}` }
         })
         .then(res => res.json())
@@ -4346,7 +4351,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply, isAdmin, publicat
   const handleSecondingConsent = async (applicationId: string, decision: 'accept' | 'decline') => {
     setIsProcessingConsent(applicationId);
     try {
-      const res = await fetch('http://localhost:5000/api/nominations/seconding-consent', {
+      const res = await fetch(`${BACKEND_URL}/api/nominations/seconding-consent`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -4371,7 +4376,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply, isAdmin, publicat
   const handleNomineeConsent = async (applicationId: string, decision: 'accept' | 'decline') => {
     setIsProcessingConsent(applicationId);
     try {
-      const res = await fetch('http://localhost:5000/api/nominations/nominee-consent', {
+      const res = await fetch(`${BACKEND_URL}/api/nominations/nominee-consent`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -4397,7 +4402,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply, isAdmin, publicat
     if (!withdrawTarget) return;
     setIsWithdrawing(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/applications/${withdrawTarget._id}/withdraw`, {
+      const res = await fetch(`${BACKEND_URL}/api/applications/${withdrawTarget._id}/withdraw`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -4724,7 +4729,7 @@ const FinalCandidateListScreen = ({ isAdmin, token, publicationSettings, onToggl
 
   const fetchFinalList = () => {
     setLoading(true);
-    fetch(`http://localhost:5000/api/elections/final-list?position=${encodeURIComponent(positionFilter)}`, {
+    fetch(`${BACKEND_URL}/api/elections/final-list?position=${encodeURIComponent(positionFilter)}`, {
       headers: { 'Authorization': `Bearer ${token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || ''}` }
     })
       .then(res => res.json())
@@ -4743,7 +4748,7 @@ const FinalCandidateListScreen = ({ isAdmin, token, publicationSettings, onToggl
     if (!window.confirm("Are you sure you want to publish the final candidate list?")) return;
     setPublishing(true);
     try {
-      const res = await fetch('http://localhost:5000/api/elections/publish-final-list', {
+      const res = await fetch(`${BACKEND_URL}/api/elections/publish-final-list`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -4771,7 +4776,7 @@ const FinalCandidateListScreen = ({ isAdmin, token, publicationSettings, onToggl
   const handleSendNotification = async (targetMode: 'all' | 'single', recipientEmail: string) => {
     setNotifying(true);
     try {
-      const res = await fetch('http://localhost:5000/api/elections/notify-final-list', {
+      const res = await fetch(`${BACKEND_URL}/api/elections/notify-final-list`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -4804,7 +4809,7 @@ const FinalCandidateListScreen = ({ isAdmin, token, publicationSettings, onToggl
   const handleUnpublish = async () => {
     if (!window.confirm("Are you sure you want to hide the final list from alumni?")) return;
     try {
-      const res = await fetch('http://localhost:5000/api/elections/unpublish-final-list', {
+      const res = await fetch(`${BACKEND_URL}/api/elections/unpublish-final-list`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -5074,7 +5079,7 @@ const DashboardScreen = ({
 
   useEffect(() => {
     if (isAdmin) {
-      fetch('http://localhost:5000/api/applications/stats', {
+      fetch(`${BACKEND_URL}/api/applications/stats`, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       })
         .then(res => res.json())
@@ -5373,7 +5378,7 @@ const ECScreen = ({ onNavigate, isAdmin, publicationSettings, onTogglePublish }:
   const [announcement, setAnnouncement] = useState<any>(null);
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/announcements/latest')
+    fetch(`${BACKEND_URL}/api/announcements/latest`)
       .then(res => res.json())
       .then(data => {
         if (data && data.title) {
@@ -5529,7 +5534,7 @@ const VotingScreen = ({ isAdmin, token, userProfile, publicationSettings, onTogg
     subtitle: 'Broadcast ballot link and candidate details to alumni.',
     badge: 'Voting Starts'
   });
-  const API = 'http://localhost:5000/api';
+  const API = `${BACKEND_URL}/api`;
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 
@@ -6289,7 +6294,7 @@ const ForgotPasswordScreen = ({ onBackToSignIn }: any) => {
     const inputEmail = formData.get('email') as string;
 
     try {
-      const res = await fetch('http://localhost:5000/api/forgot-password/verify', {
+      const res = await fetch(`${BACKEND_URL}/api/forgot-password/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: inputEmail, dob, graduationYear })
@@ -6319,7 +6324,7 @@ const ForgotPasswordScreen = ({ onBackToSignIn }: any) => {
     }
 
     try {
-      const res = await fetch('http://localhost:5000/api/reset-password', {
+      const res = await fetch(`${BACKEND_URL}/api/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, newPassword })
@@ -6404,7 +6409,7 @@ const SignInScreen = ({ onSignIn, onSwitchToSignUp, onSwitchToForgotPassword }: 
         const email = (e.currentTarget as any).email.value;
         const password = (e.currentTarget as any).password.value;
         try {
-          const res = await fetch('http://localhost:5000/api/login', {
+          const res = await fetch(`${BACKEND_URL}/api/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
@@ -6470,7 +6475,7 @@ const SignUpScreen = ({ onSignUp, onSwitchToSignIn }: any) => {
         const formData = new FormData(e.currentTarget);
         if (isSecure && passwordsMatch) {
           try {
-            const res = await fetch('http://localhost:5000/api/signup', {
+            const res = await fetch(`${BACKEND_URL}/api/signup`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -6599,7 +6604,7 @@ export default function App() {
   const fetchPublicationSettings = async () => {
     try {
       const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || '';
-      const res = await fetch('http://localhost:5000/api/elections/publication-status', {
+      const res = await fetch(`${BACKEND_URL}/api/elections/publication-status`, {
         headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
       });
       if (res.ok) {
@@ -6636,7 +6641,7 @@ export default function App() {
     setLoadingPubModule(moduleKey);
     const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || '';
     try {
-      const res = await fetch('http://localhost:5000/api/elections/publication-status', {
+      const res = await fetch(`${BACKEND_URL}/api/elections/publication-status`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -6667,7 +6672,7 @@ export default function App() {
     setLoadingPubModule('all');
     const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || '';
     try {
-      const res = await fetch('http://localhost:5000/api/elections/publication-status/publish-all', {
+      const res = await fetch(`${BACKEND_URL}/api/elections/publication-status/publish-all`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -6692,7 +6697,7 @@ export default function App() {
     setLoadingPubModule('all');
     const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || '';
     try {
-      const res = await fetch('http://localhost:5000/api/elections/publication-status/unpublish-all', {
+      const res = await fetch(`${BACKEND_URL}/api/elections/publication-status/unpublish-all`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -6785,7 +6790,7 @@ export default function App() {
       }
     }
 
-    fetch('http://localhost:5000/api/auth/sso-login', {
+    fetch(`${BACKEND_URL}/api/auth/sso-login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: targetEmail, token: ssoToken })
