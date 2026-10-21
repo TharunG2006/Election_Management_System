@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   LayoutDashboard, ClipboardCheck, FileEdit, FolderOpen, ShieldCheck, Users,
@@ -10,7 +10,9 @@ import {
   Sparkles, BookOpen, Info, Check, ArrowRight, UserPlus,
   Send, Save, Edit3, Trash2, Plus, RefreshCw, AlertTriangle, MailCheck, Loader2, X, Vote, Menu
 } from 'lucide-react';
-import necLogo from '../imports/nec-logo.png';
+// @ts-ignore
+import necLogoImg from '../imports/nec-logo.png';
+const necLogo: string = (necLogoImg as unknown as string) || '/nec-logo.png';
 
 
 // === Constants & Authorized Role Categories ===
@@ -788,7 +790,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
   const handleLoadEmailPreview = async (formOverride?: any) => {
     setLoadingPreview(true);
     try {
-      const authToken = token || localStorage.getItem('ems_token');
+      const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token'));
       const payload = formOverride || editForm;
       const res = await fetch('http://localhost:5000/api/elections/announcement/email-preview', {
         method: 'POST',
@@ -841,7 +843,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
 
   const fetchAnnouncement = () => {
     setLoading(true);
-    const authToken = token || localStorage.getItem('ems_token');
+    const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token'));
     fetch('http://localhost:5000/api/elections/announcement', {
       headers: {
         ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
@@ -890,7 +892,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
   };
 
   const fetchSmtpStatus = () => {
-    const authToken = token || localStorage.getItem('ems_token');
+    const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token'));
     if (!authToken) return;
     fetch('http://localhost:5000/api/elections/smtp-status', {
       headers: { 'Authorization': `Bearer ${authToken}` }
@@ -911,7 +913,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
 
   const handleSaveAnnouncement = async (overrideStatus?: 'published' | 'draft') => {
     setIsSaving(true);
-    const authToken = token || localStorage.getItem('ems_token');
+    const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token'));
     const payload = {
       ...editForm,
       ...(overrideStatus ? { status: overrideStatus } : {})
@@ -947,7 +949,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
 
   const handleDeleteAnnouncement = async () => {
     if (!confirm("Are you sure you want to delete and reset the current election announcement?")) return;
-    const authToken = token || localStorage.getItem('ems_token');
+    const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token'));
     try {
       const res = await fetch('http://localhost:5000/api/elections/announcement', {
         method: 'DELETE',
@@ -982,7 +984,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
     }
 
     setIsBroadcasting(true);
-    const authToken = token || localStorage.getItem('ems_token');
+    const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token'));
     try {
       const bodyPayload: any = {
         emailSubject: editForm.emailSubject,
@@ -2654,12 +2656,12 @@ const EligibilityCriteriaScreen = ({ isAdmin, publicationSettings, onTogglePubli
 const ApplyScreen = ({ userProfile, onNominationSuccess, isAdmin, publicationSettings, onTogglePublish, onNavigate }: any) => {
   // Proposer is the logged-in user
   const proposer = {
-    name: userProfile?.name || "Tharun G",
-    email: userProfile?.email || "tarun.ganapathi2007@gmail.com",
-    department: userProfile?.department || "CSE",
-    graduationYear: userProfile?.graduationYear || "2015",
-    phone: userProfile?.phone || "+91-8056300117",
-    alumniId: "ALUM-2015-PROPOSER"
+    name: userProfile?.name || "",
+    email: userProfile?.email || "",
+    department: userProfile?.department || "",
+    graduationYear: userProfile?.graduationYear || "",
+    phone: userProfile?.phone || "",
+    alumniId: userProfile?.alumniId || ""
   };
 
   // Nominee Details
@@ -2925,7 +2927,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess, isAdmin, publicationSet
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ems_token') || ''}`
+          'Authorization': `Bearer ${(sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || ''}`
         },
         body: JSON.stringify({
           proposer,
@@ -4202,7 +4204,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply, isAdmin, publicat
     if (userProfile?.email) {
       setLoading(true);
       fetch(`http://localhost:5000/api/applications?email=${encodeURIComponent(userProfile.email)}&roleType=${nominationView}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('ems_token') || ''}` }
+        headers: { 'Authorization': `Bearer ${(sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || ''}` }
         })
         .then(res => res.json())
         .then(data => {
@@ -4229,7 +4231,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply, isAdmin, publicat
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ems_token') || ''}`
+          'Authorization': `Bearer ${(sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || ''}`
         },
         body: JSON.stringify({ applicationId, decision })
       });
@@ -4254,7 +4256,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply, isAdmin, publicat
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ems_token') || ''}`
+          'Authorization': `Bearer ${(sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || ''}`
         },
         body: JSON.stringify({ applicationId, decision })
       });
@@ -4280,7 +4282,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply, isAdmin, publicat
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ems_token') || ''}`
+          'Authorization': `Bearer ${(sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || ''}`
         },
         body: JSON.stringify({ withdrawalReason })
       });
@@ -4604,7 +4606,7 @@ const FinalCandidateListScreen = ({ isAdmin, token, publicationSettings, onToggl
   const fetchFinalList = () => {
     setLoading(true);
     fetch(`http://localhost:5000/api/elections/final-list?position=${encodeURIComponent(positionFilter)}`, {
-      headers: { 'Authorization': `Bearer ${token || localStorage.getItem('ems_token') || ''}` }
+      headers: { 'Authorization': `Bearer ${token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || ''}` }
     })
       .then(res => res.json())
       .then(data => {
@@ -6183,6 +6185,8 @@ const ForgotPasswordScreen = ({ onBackToSignIn }: any) => {
 
 const SignInScreen = ({ onSignIn, onSwitchToSignUp, onSwitchToForgotPassword }: any) => {
   const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   return (
     <AuthContainer title="Alumni Sign In" subtitle="Sign in with your registered alumni credentials">
@@ -6210,12 +6214,12 @@ const SignInScreen = ({ onSignIn, onSwitchToSignUp, onSwitchToForgotPassword }: 
       }}>
         <div>
           <FormFieldLabel icon={Mail} label="Alumni email" />
-          <input name="email" type="email" required defaultValue="tarun.ganapathi2007@gmail.com" className="w-full bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 text-xs text-slate-800 dark:text-white focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600" placeholder="you@alumni.org" />
+          <input name="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" className="w-full bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 text-xs text-slate-800 dark:text-white focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600" placeholder="you@alumni.org" />
         </div>
         <div>
           <FormFieldLabel icon={Lock} label="Password" />
           <div className="relative">
-            <input name="password" type={showPassword ? "text" : "password"} required defaultValue="Password@123" className="w-full bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 text-xs text-slate-800 dark:text-white focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600" placeholder="••••••••" />
+            <input name="password" type={showPassword ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" className="w-full bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg px-3.5 py-2.5 text-xs text-slate-800 dark:text-white focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600" placeholder="••••••••" />
             <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-2.5 text-slate-400 hover:text-slate-600">
               {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
@@ -6352,17 +6356,17 @@ const SignUpScreen = ({ onSignUp, onSwitchToSignIn }: any) => {
 // === Main Application Controller ===
 
 export default function App() {
-  const [token, setToken] = useState<string>(() => localStorage.getItem('ems_token') || '');
+  const [token, setToken] = useState<string>(() => sessionStorage.getItem('ems_token') || '');
   const [userProfile, setUserProfile] = useState<any>(() => {
     try {
-      const saved = localStorage.getItem('ems_user');
+      const saved = sessionStorage.getItem('ems_user');
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
     }
   });
   const [authView, setAuthView] = useState<'signin' | 'signup' | 'forgotPassword' | '400' | '404' | 'app'>(() => {
-    const saved = localStorage.getItem('ems_user');
+    const saved = sessionStorage.getItem('ems_user');
     return saved ? 'app' : 'signin';
   });
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -6375,9 +6379,17 @@ export default function App() {
 
   const isAdmin = userProfile?.role === 'admin';
 
+  // Purge any persistent legacy localStorage so opening/running the project never auto-logs in
+  useEffect(() => {
+    try {
+      localStorage.removeItem('ems_token');
+      localStorage.removeItem('ems_user');
+    } catch {}
+  }, []);
+
   const fetchPublicationSettings = async () => {
     try {
-      const authToken = token || localStorage.getItem('ems_token') || '';
+      const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || '';
       const res = await fetch('http://localhost:5000/api/elections/publication-status', {
         headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
       });
@@ -6405,7 +6417,7 @@ export default function App() {
 
   const handleTogglePublishModule = async (moduleKey: string, nextStatus: boolean) => {
     setLoadingPubModule(moduleKey);
-    const authToken = token || localStorage.getItem('ems_token') || '';
+    const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || '';
     try {
       const res = await fetch('http://localhost:5000/api/elections/publication-status', {
         method: 'POST',
@@ -6436,7 +6448,7 @@ export default function App() {
   const handlePublishAllModules = async () => {
     if (!window.confirm("Are you sure you want to PUBLISH ALL modules to Alumni? Everything will become visible and active for alumni members.")) return;
     setLoadingPubModule('all');
-    const authToken = token || localStorage.getItem('ems_token') || '';
+    const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || '';
     try {
       const res = await fetch('http://localhost:5000/api/elections/publication-status/publish-all', {
         method: 'POST',
@@ -6461,7 +6473,7 @@ export default function App() {
   const handleUnpublishAllModules = async () => {
     if (!window.confirm("Are you sure you want to UNPUBLISH ALL modules from Alumni? All alumni views will display pending publication notices.")) return;
     setLoadingPubModule('all');
-    const authToken = token || localStorage.getItem('ems_token') || '';
+    const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token')) || '';
     try {
       const res = await fetch('http://localhost:5000/api/elections/publication-status/unpublish-all', {
         method: 'POST',
@@ -6515,6 +6527,8 @@ export default function App() {
   }, [userProfile, isAdmin]);
 
   const handleLogout = () => {
+    sessionStorage.removeItem('ems_token');
+    sessionStorage.removeItem('ems_user');
     localStorage.removeItem('ems_token');
     localStorage.removeItem('ems_user');
     setToken('');
@@ -6526,8 +6540,8 @@ export default function App() {
   const handleAuthSuccess = (user: any, authToken: string) => {
     setUserProfile(user);
     setToken(authToken || '');
-    if (authToken) localStorage.setItem('ems_token', authToken);
-    if (user) localStorage.setItem('ems_user', JSON.stringify(user));
+    if (authToken) sessionStorage.setItem('ems_token', authToken);
+    if (user) sessionStorage.setItem('ems_user', JSON.stringify(user));
     setActiveTab('dashboard');
     setAuthView('app');
   };
