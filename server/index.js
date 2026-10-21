@@ -1,4 +1,4 @@
-const path = require('path');
+﻿const path = require('path');
 const fs = require('fs');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
@@ -460,6 +460,10 @@ async function startServer() {
 
 startServer();
 
+// Register Vaave Alumni SSO Routes
+const registerSSORoutes = require('./sso_module');
+registerSSORoutes(app, () => db, ADMIN_EMAIL, JWT_SECRET);
+
 // API Routes
 app.get('/api/applications/stats', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -724,8 +728,12 @@ async function getPublicationSettings() {
 async function getEffectiveAlumniSettings() {
   const settings = await getPublicationSettings();
   const schedule = await getElectionScheduleContext();
+  // Any module published by admin or active in schedule is available to alumni
   const effectiveSettings = Object.fromEntries(
-    Object.keys(settings).map((key) => [key, !!settings[key] && !!schedule.availability[key]])
+    Object.keys(settings).map((key) => [
+      key,
+      Boolean(settings[key] || (schedule.availability && schedule.availability[key]))
+    ])
   );
   return { settings, effectiveSettings, ...schedule };
 }
@@ -936,6 +944,64 @@ app.post('/api/elections/publication-status/unpublish-all', authenticateToken, r
   }
 });
 
+// Helper: Retrieve all unique alumni recipients across members and users collections in DB
+async function getAllAlumniRecipients() {
+  const seen = new Set();
+  const adminEmailLower = (process.env.ADMIN_EMAIL || 'tharun20062@outlook.com').trim().toLowerCase();
+  const recipients = [];
+
+  // 1. Registered users (role !== 'admin')
+  try {
+    const users = await db.collection('users').find({
+      role: { $ne: 'admin' }
+    }).toArray();
+
+    for (const u of users) {
+      const email = (u.email || '').trim().toLowerCase();
+      if (email && email.includes('@') && email !== adminEmailLower && !seen.has(email)) {
+        seen.add(email);
+        recipients.push({
+          email,
+          name: u.name || email.split('@')[0],
+          department: u.department || '',
+          degree: u.degree || '',
+          graduationYear: u.graduationYear || u.batch || '',
+          source: 'users'
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[getAllAlumniRecipients] Error fetching users:', err.message);
+  }
+
+  // 2. All college alumni from members collection
+  try {
+    const members = await db.collection('members').find(
+      { 'basic.email_id': { $exists: true, $ne: '' } },
+      { projection: { 'basic.name': 1, 'basic.email_id': 1, 'basic.alternate_email_id': 1, 'education_details': 1 } }
+    ).toArray();
+
+    for (const m of members) {
+      const email = (m.basic?.email_id || '').trim().toLowerCase();
+      if (email && email.includes('@') && email !== adminEmailLower && !seen.has(email)) {
+        seen.add(email);
+        recipients.push({
+          email,
+          name: m.basic?.name || email.split('@')[0],
+          department: m.education_details?.[0]?.stream || '',
+          degree: m.education_details?.[0]?.course || '',
+          graduationYear: m.education_details?.[0]?.end_year || '',
+          source: 'members'
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[getAllAlumniRecipients] Error fetching members:', err.message);
+  }
+
+  return recipients;
+}
+
 // Admin Only: Send Announcement / Call for Nominations to All Alumni or a Single Person
 app.post('/api/elections/announcement/send-email', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -962,25 +1028,12 @@ app.post('/api/elections/announcement/send-email', authenticateToken, requireAdm
       const targetUser = await db.collection('users').findOne({ email: targetEmail });
       recipients = [{ email: targetEmail, user: targetUser }];
     } else {
-      // Retrieve all registered alumni accounts (exclude admin)
-      const alumniList = await db.collection('users').find({
-        email: { $ne: ADMIN_EMAIL }
-      }).toArray();
-
-      if (!alumniList || alumniList.length === 0) {
-        return res.status(400).json({ error: 'No registered alumni members found to send emails to.' });
+      // Query ALL alumni across both members and users collections in DB
+      const allAlumni = await getAllAlumniRecipients();
+      if (!allAlumni || allAlumni.length === 0) {
+        return res.status(400).json({ error: 'No registered alumni members found in database.' });
       }
-
-      // Deduplicate by email
-      const seen = new Set();
-      recipients = [];
-      for (const u of alumniList) {
-        const email = (u.email || '').trim().toLowerCase();
-        if (email && !seen.has(email)) {
-          seen.add(email);
-          recipients.push({ email, user: u });
-        }
-      }
+      recipients = allAlumni.map(a => ({ email: a.email, user: a }));
     }
 
     const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
@@ -3027,9 +3080,14 @@ app.post('/api/elections/notify-final-list', authenticateToken, requireAdmin, as
             }
           }];
         } else {
-          members = await db.collection('members').find({
-            "basic.email_id": { $in: ['tarun.ganapathi2007@gmail.com', 'infintygaming28@gmail.com'] }
-          }).toArray();
+          // Query ALL alumni across both members and users collections in DB
+          const allAlumni = await getAllAlumniRecipients();
+          members = allAlumni.map(a => ({
+            basic: {
+              email_id: a.email,
+              name: a.name || 'Esteemed Alumnus'
+            }
+          }));
         }
 
         let sentCount = 0;
@@ -3213,9 +3271,9 @@ async function sendVotingBroadcast(emailGenerator, announcement, candidateSummar
       }];
     }
   } else {
-    alumniList = await db.collection('users').find({
-      email: { $in: ['tarun.ganapathi2007@gmail.com', 'infintygaming28@gmail.com'] }
-    }).toArray();
+    // Query ALL alumni across both members and users collections in DB
+    const allAlumni = await getAllAlumniRecipients();
+    alumniList = allAlumni;
   }
 
   const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
@@ -3660,18 +3718,80 @@ app.get('/api/elections/voting/results', optionalAuth, async (req, res) => {
   }
 });
 
-app.post('/api/elections/voting/clear-all-votes', authenticateToken, requireAdmin, async (req, res) => {
+// Admin Only: Conclude Election Cycle & Reset for Next Election (Production)
+// Archives current election summary, clears all cast votes, clears current ballot candidates/proposals, and resets status to 'not_started'
+app.post(['/api/elections/voting/reset-election-cycle', '/api/elections/voting/clear-all-votes'], authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const result = await db.collection('votes').deleteMany({});
+    const votesCount = await db.collection('votes').countDocuments();
+    const candidatesCount = await db.collection('applications').countDocuments();
+    const config = await db.collection('voting_config').findOne({}) || {};
+
+    // 1. Snapshot archive of concluded election cycle before clearing
+    const archiveRecord = {
+      concludedAt: new Date(),
+      concludedBy: req.user?.email || 'admin',
+      totalVotesArchived: votesCount,
+      totalCandidatesArchived: candidatesCount,
+      previousStatus: config.status || 'live',
+      closedAt: config.closedAt || new Date()
+    };
+    await db.collection('election_archives').insertOne(archiveRecord);
+    console.log(`[Election Reset] Concluded & archived election cycle: ${votesCount} votes, ${candidatesCount} candidates`);
+
+    // 2. Clear all cast votes
+    const voteResult = await db.collection('votes').deleteMany({});
+
+    // 3. Clear current candidates/nominees standing in the ballot
+    const candidateResult = await db.collection('applications').deleteMany({});
+
+    // 4. Reset voting_config to fresh unstarted state for next election
     await db.collection('voting_config').updateOne(
       {},
-      { $set: { status: 'not_started' } },
+      {
+        $set: {
+          status: 'not_started',
+          candidatesPublished: false,
+          publishedAt: null,
+          openedAt: null,
+          closedAt: null,
+          closedBy: null,
+          openedBy: null,
+          notifyLiveSentAt: null,
+          reminder2DaySentAt: null,
+          reminder1DaySentAt: null,
+          candidatesNotifiedAt: null,
+          updatedAt: new Date(),
+          updatedBy: req.user?.email || 'admin'
+        }
+      },
       { upsert: true }
     );
-    res.json({ success: true, message: `Successfully cleared ${result.deletedCount} votes and reset voting status to 'Not Started'.` });
+
+    // 5. Reset publication settings for voting and finalList
+    await db.collection('publication_settings').updateOne(
+      {},
+      {
+        $set: {
+          voting: false,
+          finalList: false,
+          updatedAt: new Date(),
+          updatedBy: req.user?.email || 'admin'
+        }
+      },
+      { upsert: true }
+    );
+
+    res.json({
+      success: true,
+      message: `Election cycle concluded and reset for next election. Successfully archived and cleared ${voteResult.deletedCount} votes and ${candidateResult.deletedCount} ballot candidates. Portal is now primed for the next election cycle.`,
+      archived: {
+        votesCleared: voteResult.deletedCount,
+        candidatesCleared: candidateResult.deletedCount
+      }
+    });
   } catch (err) {
-    console.error('Error clearing votes:', err);
-    res.status(500).json({ error: 'Failed to clear votes' });
+    console.error('Error resetting election cycle:', err);
+    res.status(500).json({ error: 'Failed to reset election cycle: ' + err.message });
   }
 });
 

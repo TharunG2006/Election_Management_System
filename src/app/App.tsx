@@ -8,7 +8,7 @@ import {
   Lock, Eye, EyeOff, LogOut, Megaphone, AlertCircle, HelpCircle,
   Download, Share2, ExternalLink, ShieldAlert, ListChecks, Undo2,
   Sparkles, BookOpen, Info, Check, ArrowRight, UserPlus,
-  Send, Save, Edit3, Trash2, Plus, RefreshCw, AlertTriangle, MailCheck, Loader2, X, Vote, Menu
+  Send, Save, Edit3, Trash2, Plus, RefreshCw, AlertTriangle, RotateCcw, MailCheck, Loader2, X, Vote, Menu
 } from 'lucide-react';
 // @ts-ignore
 import necLogoImg from '../imports/nec-logo.png';
@@ -130,8 +130,8 @@ const DEFAULT_PUB_SETTINGS: PublicationSettings = {
   eligibility: true,
   apply: true,
   applications: true,
-  finalList: false,
-  voting: false,
+  finalList: true,
+  voting: true,
   timelines: true
 };
 
@@ -342,6 +342,7 @@ const AlumniPublicationModal = ({
   onClose,
   publicationSettings,
   onToggleModule,
+  onTogglePublish,
   onPublishAll,
   onUnpublishAll,
   loadingModule
@@ -349,11 +350,13 @@ const AlumniPublicationModal = ({
   isOpen: boolean;
   onClose: () => void;
   publicationSettings: PublicationSettings;
-  onToggleModule: (key: string, nextStatus: boolean) => void;
+  onToggleModule?: (key: string, nextStatus: boolean) => void;
+  onTogglePublish?: (key: string, nextStatus: boolean) => void;
   onPublishAll: () => void;
   onUnpublishAll: () => void;
   loadingModule?: string | null;
 }) => {
+  const toggleHandler = onTogglePublish || onToggleModule || (() => {});
   if (!isOpen) return null;
 
   const totalModules = PUBLICATION_MODULES.length;
@@ -493,7 +496,7 @@ const AlumniPublicationModal = ({
 
                 <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
                   <button
-                    onClick={() => onToggleModule(mod.key, !isPub)}
+                    onClick={() => toggleHandler(mod.key, !isPub)}
                     disabled={isLoading}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs ${
                       isPub
@@ -554,12 +557,14 @@ const NotifyAlumniModal = ({
   const [targetMode, setTargetMode] = useState<'all' | 'single'>('all');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [emailError, setEmailError] = useState('');
+  const [showCautionConfirm, setShowCautionConfirm] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setTargetMode('all');
       setRecipientEmail('');
       setEmailError('');
+      setShowCautionConfirm(false);
     }
   }, [isOpen]);
 
@@ -576,6 +581,11 @@ const NotifyAlumniModal = ({
       setEmailError('');
       onSend('single', trimmed);
     } else {
+      if (!showCautionConfirm) {
+        setShowCautionConfirm(true);
+        return;
+      }
+      setShowCautionConfirm(false);
       onSend('all', '');
     }
   };
@@ -720,50 +730,102 @@ const NotifyAlumniModal = ({
             </motion.div>
           )}
 
-          {/* Info Notice */}
-          <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 rounded-xl text-[11px] text-slate-600 dark:text-slate-400 space-y-1">
-            <div className="flex items-center justify-between font-medium">
-              <span className="flex items-center gap-1.5">
-                <ShieldCheck size={13} className="text-emerald-600" />
-                Sender: <strong>muralisubbu11@gmail.com</strong>
-              </span>
-              <span className="text-[10px] text-slate-400 font-mono">Official EC Dispatch</span>
+          {/* Info Notice & Caution Alert */}
+          <div className="space-y-2.5">
+            {targetMode === 'all' && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-xl text-xs flex items-start gap-2.5">
+                <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <strong className="font-bold block text-[11px] uppercase tracking-wider text-amber-900 dark:text-amber-100">
+                    ?? Caution: Mass Alumni Broadcast
+                  </strong>
+                  <p className="text-[11px] mt-0.5 leading-relaxed text-amber-800 dark:text-amber-300">
+                    This notification will be transmitted to <strong>ALL 12,048+ registered alumni</strong> in the college database.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 rounded-xl text-[11px] text-slate-600 dark:text-slate-400 space-y-1">
+              <div className="flex items-center justify-between font-medium">
+                <span className="flex items-center gap-1.5">
+                  <ShieldCheck size={13} className="text-emerald-600" />
+                  Sender: <strong>muralisubbu11@gmail.com</strong>
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">Official EC Dispatch</span>
+              </div>
+              <p className="opacity-80">
+                {targetMode === 'all'
+                  ? 'All alumni members in the database will receive this official dispatch with verified links.'
+                  : `A personalized election dispatch will be transmitted specifically to ${recipientEmail || 'the specified member'}.`}
+              </p>
             </div>
-            <p className="opacity-80">
-              {targetMode === 'all'
-                ? 'All registered alumni will receive official gazette details with verified links.'
-                : `A personalized election dispatch will be transmitted specifically to ${recipientEmail || 'the specified member'}.`}
-            </p>
+
+            {/* Caution Confirmation Box when user clicks Send to All */}
+            {showCautionConfirm && targetMode === 'all' && (
+              <div className="p-3.5 bg-rose-50 dark:bg-rose-950/50 border-2 border-rose-400 dark:border-rose-700 rounded-xl space-y-2.5 animate-in fade-in zoom-in-95">
+                <div className="flex items-center gap-2 text-rose-700 dark:text-rose-300 font-bold text-xs uppercase tracking-wider">
+                  <AlertTriangle size={16} className="text-rose-600" />
+                  <span>Confirm: Broadcast to All Alumni in Database</span>
+                </div>
+                <p className="text-xs text-rose-950 dark:text-rose-100 leading-relaxed">
+                  <strong>CAUTION:</strong> You are about to send live emails to <strong>EVERY alumnus in the college database (~12,048 members)</strong>. This action cannot be revoked. Are you sure you want to proceed?
+                </p>
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-rose-200 dark:border-rose-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowCautionConfirm(false)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => {
+                      setShowCautionConfirm(false);
+                      onSend('all', '');
+                    }}
+                    className="px-4 py-1.5 rounded-lg text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md flex items-center gap-1.5"
+                  >
+                    {isLoading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                    <span>Yes, Send to All Alumni</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Footer buttons */}
-          <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isLoading}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading || (targetMode === 'single' && !recipientEmail.trim())}
-              className="px-5 py-2 rounded-xl text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white shadow-xs transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" />
-                  <span>Sending Dispatch...</span>
-                </>
-              ) : (
-                <>
-                  <Send size={13} />
-                  <span>{targetMode === 'all' ? 'Send to All Alumni' : 'Send to Single Person'}</span>
-                </>
-              )}
-            </button>
-          </div>
+          {!showCautionConfirm && (
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isLoading}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isLoading || (targetMode === 'single' && !recipientEmail.trim())}
+                className="px-5 py-2 rounded-xl text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white shadow-xs transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Sending Dispatch...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send size={13} />
+                    <span>{targetMode === 'all' ? 'Send to All Alumni' : 'Send to Single Person'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </form>
       </motion.div>
     </div>
@@ -778,6 +840,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
   const [isSaving, setIsSaving] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailTargetMode, setEmailTargetMode] = useState<'all' | 'single'>('all');
+  const [showAnnouncementCaution, setShowAnnouncementCaution] = useState(false);
   const [singleRecipientEmail, setSingleRecipientEmail] = useState('');
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState<any>(null);
@@ -983,6 +1046,11 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
       return;
     }
 
+    if (emailTargetMode === 'all' && !showAnnouncementCaution) {
+      setShowAnnouncementCaution(true);
+      return;
+    }
+    setShowAnnouncementCaution(false);
     setIsBroadcasting(true);
     const authToken = token || (sessionStorage.getItem('ems_token') || localStorage.getItem('ems_token'));
     try {
@@ -1739,48 +1807,99 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
                     </div>
                   )}
 
-                  <div className="flex items-center justify-between pt-2">
-                    <button
-                      type="button"
-                      onClick={() => handleLoadEmailPreview()}
-                      disabled={loadingPreview || isBroadcasting}
-                      className="px-3 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800/80 bg-purple-50/60 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 font-medium text-xs flex items-center gap-1.5 hover:bg-purple-100 transition-colors"
-                    >
-                      {loadingPreview ? <RefreshCw size={12} className="animate-spin" /> : <Eye size={12} />}
-                      Preview Email
-                    </button>
-
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowEmailModal(false)}
-                        disabled={isBroadcasting}
-                        className="px-3.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSendBroadcast}
-                        disabled={isBroadcasting}
-                        className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-medium text-xs rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
-                      >
-                        {isBroadcasting ? (
-                          <>
-                            <RefreshCw size={13} className="animate-spin" /> Dispatching...
-                          </>
-                        ) : emailTargetMode === 'single' ? (
-                          <>
-                            <Send size={13} /> Send Email
-                          </>
-                        ) : (
-                          <>
-                            <Users size={13} /> Confirm & Broadcast
-                          </>
-                        )}
-                      </button>
+                  {/* Caution Warning for Mass Announcement */}
+                  {emailTargetMode === 'all' && (
+                    <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-xl text-xs flex items-start gap-2.5">
+                      <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="font-bold block text-[11px] uppercase tracking-wider text-amber-900 dark:text-amber-100">
+                          ?? Caution: Mass Alumni Broadcast
+                        </strong>
+                        <p className="text-[11px] mt-0.5 leading-relaxed text-amber-800 dark:text-amber-300">
+                          This official election announcement will be transmitted to <strong>ALL 12,048+ registered alumni</strong> in the database.
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {/* Caution Confirmation Box when user clicks Confirm & Broadcast */}
+                  {showAnnouncementCaution && emailTargetMode === 'all' && (
+                    <div className="p-3.5 bg-rose-50 dark:bg-rose-950/50 border-2 border-rose-400 dark:border-rose-700 rounded-xl space-y-2.5 animate-in fade-in zoom-in-95">
+                      <div className="flex items-center gap-2 text-rose-700 dark:text-rose-300 font-bold text-xs uppercase tracking-wider">
+                        <AlertTriangle size={16} className="text-rose-600" />
+                        <span>Confirm: Broadcast Announcement to All Alumni</span>
+                      </div>
+                      <p className="text-xs text-rose-950 dark:text-rose-100 leading-relaxed">
+                        <strong>CAUTION:</strong> You are about to dispatch this official election announcement to <strong>EVERY alumnus in the college database (~12,048 members)</strong>. This action cannot be revoked. Are you sure you want to proceed?
+                      </p>
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-rose-200 dark:border-rose-800">
+                        <button
+                          type="button"
+                          onClick={() => setShowAnnouncementCaution(false)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isBroadcasting}
+                          onClick={handleSendBroadcast}
+                          className="px-4 py-1.5 rounded-lg text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md flex items-center gap-1.5"
+                        >
+                          {isBroadcasting ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                          <span>Yes, Dispatch to All Alumni</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {!showAnnouncementCaution && (
+                    <div className="flex items-center justify-between pt-2">
+                      <button
+                        type="button"
+                        onClick={() => handleLoadEmailPreview()}
+                        disabled={loadingPreview || isBroadcasting}
+                        className="px-3 py-1.5 rounded-lg border border-purple-200 dark:border-purple-800/80 bg-purple-50/60 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 font-medium text-xs flex items-center gap-1.5 hover:bg-purple-100 transition-colors"
+                      >
+                        {loadingPreview ? <RefreshCw size={12} className="animate-spin" /> : <Eye size={12} />}
+                        Preview Email
+                      </button>
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowEmailModal(false);
+                            setShowAnnouncementCaution(false);
+                          }}
+                          disabled={isBroadcasting}
+                          className="px-3.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-medium text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSendBroadcast}
+                          disabled={isBroadcasting}
+                          className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-medium text-xs rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
+                        >
+                          {isBroadcasting ? (
+                            <>
+                              <RefreshCw size={13} className="animate-spin" /> Dispatching...
+                            </>
+                          ) : emailTargetMode === 'single' ? (
+                            <>
+                              <Send size={13} /> Send Email
+                            </>
+                          ) : (
+                            <>
+                              <Users size={13} /> Confirm & Broadcast
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
@@ -5394,6 +5513,7 @@ const VotingScreen = ({ isAdmin, token, userProfile, publicationSettings, onTogg
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [castingPosition, setCastingPosition] = useState<string | null>(null);
+  const [showResetModal, setShowResetModal] = useState(false);
   const [statusInfo, setStatusInfo] = useState<any>(null);
   const [selectedPosition, setSelectedPosition] = useState<string>('');
   const [notifyModalConfig, setNotifyModalConfig] = useState<{
@@ -5553,10 +5673,9 @@ const VotingScreen = ({ isAdmin, token, userProfile, publicationSettings, onTogg
   };
 
   const clearAllVotes = async () => {
-    if (!window.confirm("WARNING (TEST MODE): Are you absolutely sure you want to clear ALL votes from the database? This cannot be undone!")) return;
     setActionLoading('clear');
     try {
-      const res = await fetch(`${API}/elections/voting/clear-all-votes`, { method: 'POST', headers });
+      const res = await fetch(`${API}/elections/voting/reset-election-cycle`, { method: 'POST', headers });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       alert(`✅ ${data.message}`);
@@ -5717,10 +5836,11 @@ const VotingScreen = ({ isAdmin, token, userProfile, publicationSettings, onTogg
               className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs rounded-lg transition-colors disabled:opacity-50 inline-flex items-center gap-2 border border-slate-200/80 dark:border-slate-700">
               <RefreshCw size={13} /><span>Refresh</span>
             </button>
-            <button onClick={clearAllVotes} disabled={!!actionLoading}
+            <button onClick={() => setShowResetModal(true)} disabled={!!actionLoading}
+              title="Conclude current election cycle, clear votes, and clear ballot candidates for the next election"
               className="px-4 py-2 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 text-rose-700 dark:text-rose-400 font-semibold text-xs rounded-lg transition-colors disabled:opacity-50 inline-flex items-center gap-2 border border-rose-200 dark:border-rose-800/60 ml-auto">
-              {actionLoading === 'clear' ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              <span>Reset Votes (Test Mode)</span>
+              {actionLoading === 'clear' ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+              <span>Reset for Next Election</span>
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-4 mt-2.5 text-[11px] text-slate-400">
@@ -5794,6 +5914,95 @@ const VotingScreen = ({ isAdmin, token, userProfile, publicationSettings, onTogg
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Production Conclude Election & Reset for Next Cycle Modal */}
+        {isAdmin && showResetModal && (
+          <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4"
+            >
+              <div className="flex items-start gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <RotateCcw size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      Conclude Election & Reset for Next Cycle
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                      Production Action
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Clear all cast votes, remove current candidates, and prime portal for the next election.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-rose-50/70 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs space-y-2 text-rose-950 dark:text-rose-200">
+                <div className="flex items-center gap-2 font-bold text-rose-700 dark:text-rose-300">
+                  <AlertTriangle size={15} />
+                  <span>Before proceeding, verify:</span>
+                </div>
+                <ul className="list-disc pl-5 space-y-1 text-[11px] opacity-90">
+                  <li>Voting has officially closed and election results are recorded.</li>
+                  <li>All vote tallies and certified results have been recorded for the record.</li>
+                </ul>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl text-xs space-y-2 text-slate-700 dark:text-slate-300">
+                <strong className="block text-[11px] uppercase tracking-wider text-slate-800 dark:text-slate-200 font-bold">
+                  Summary of Production Reset Actions:
+                </strong>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <span className="font-bold text-slate-900 dark:text-white block">1. Clear Votes</span>
+                    <span className="text-slate-500 text-[10px] leading-tight block mt-0.5">Archives and permanently clears all cast votes from ballot box.</span>
+                  </div>
+                  <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <span className="font-bold text-slate-900 dark:text-white block">2. Clear Candidates</span>
+                    <span className="text-slate-500 text-[10px] leading-tight block mt-0.5">Clears all candidates standing in current ballot roll.</span>
+                  </div>
+                  <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <span className="font-bold text-slate-900 dark:text-white block">3. Reset Status</span>
+                    <span className="text-slate-500 text-[10px] leading-tight block mt-0.5">Reverts status to 'Not Started' & resets publication.</span>
+                  </div>
+                  <div className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <span className="font-bold text-slate-900 dark:text-white block">4. Ready Next Cycle</span>
+                    <span className="text-slate-500 text-[10px] leading-tight block mt-0.5">Portal is freshly prepared for next nomination cycle.</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowResetModal(false)}
+                  disabled={actionLoading === 'clear'}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={actionLoading === 'clear'}
+                  onClick={async () => {
+                    setShowResetModal(false);
+                    await clearAllVotes();
+                  }}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white shadow-md transition-colors flex items-center gap-1.5"
+                >
+                  {actionLoading === 'clear' ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
+                  <span>Confirm & Reset for Next Election</span>
+                </button>
+              </div>
+            </motion.div>
           </div>
         )}
 
@@ -6413,7 +6622,15 @@ export default function App() {
     return () => window.clearInterval(refreshTimer);
   }, [token]);
 
-  const portalPublicationSettings = isAdmin ? publicationSettings : effectivePublicationSettings;
+  const portalPublicationSettings = isAdmin ? publicationSettings : {
+    announcements: Boolean(publicationSettings.announcements || effectivePublicationSettings.announcements),
+    eligibility: Boolean(publicationSettings.eligibility || effectivePublicationSettings.eligibility),
+    apply: Boolean(publicationSettings.apply || effectivePublicationSettings.apply),
+    applications: Boolean(publicationSettings.applications || effectivePublicationSettings.applications),
+    finalList: Boolean(publicationSettings.finalList || effectivePublicationSettings.finalList),
+    voting: Boolean(publicationSettings.voting || effectivePublicationSettings.voting),
+    timelines: Boolean(publicationSettings.timelines || effectivePublicationSettings.timelines)
+  };
 
   const handleTogglePublishModule = async (moduleKey: string, nextStatus: boolean) => {
     setLoadingPubModule(moduleKey);
@@ -6546,6 +6763,49 @@ export default function App() {
     setAuthView('app');
   };
 
+  // === Single Sign-On (SSO) URL Handler ===
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const rawEmail = params.get('email') || params.get('sso_email');
+    const ssoToken = params.get('token') || params.get('sso_token');
+
+    if (!rawEmail && !ssoToken) return;
+
+    let targetEmail = rawEmail || '';
+    if (rawEmail) {
+      try {
+        if (/^[A-Za-z0-9+/=]+$/.test(rawEmail) && (rawEmail.length % 4 === 0)) {
+          const decoded = atob(rawEmail);
+          if (decoded && decoded.includes('@')) {
+            targetEmail = decoded;
+          }
+        }
+      } catch (e) {
+        // use rawEmail as-is
+      }
+    }
+
+    fetch('http://localhost:5000/api/auth/sso-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: targetEmail, token: ssoToken })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.success && data.user) {
+          handleAuthSuccess(data.user, data.token || '');
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        } else {
+          console.warn('[SSO] Verification response:', data);
+        }
+      })
+      .catch(err => {
+        console.error('[SSO] Login error:', err);
+      });
+  }, []);
+
+
   // Navigation tabs
   const ALUMNI_TABS = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -6572,7 +6832,7 @@ export default function App() {
   const isAlumniTabAvailable = (tabId: string) => {
     if (tabId === 'dashboard') return true;
     const moduleKey = TAB_PUBLICATION_KEYS[tabId];
-    return !!moduleKey && !!effectivePublicationSettings[moduleKey];
+    return !!moduleKey && (!!effectivePublicationSettings[moduleKey] || !!publicationSettings[moduleKey]);
   };
 
   const currentTabs = isAdmin
@@ -6976,6 +7236,7 @@ export default function App() {
           isOpen={showPubModal}
           onClose={() => setShowPubModal(false)}
           publicationSettings={publicationSettings}
+          onToggleModule={handleTogglePublishModule}
           onTogglePublish={handleTogglePublishModule}
           onPublishAll={handlePublishAllModules}
           onUnpublishAll={handleUnpublishAllModules}
