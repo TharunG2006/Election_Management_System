@@ -23,6 +23,8 @@ const ELECTION_POSITIONS = [
   "Joint Treasurer"
 ];
 
+const NOMINEE_SERVICE_YEARS = ["2021", "2022", "2023", "2024", "2025", "2026"];
+
 // Authorized Additional Responsibility categories per bylaws:
 const RESPONSIBILITY_CATEGORIES = [
   {
@@ -93,49 +95,6 @@ const AnimatedCounter = ({ value }: { value: number }) => {
   return <span>{count}</span>;
 };
 
-const MultiSelectDropdown = ({ options, selected, onChange, placeholder, className }: any) => {
-  const [isOpen, setIsOpen] = useState(false);
-  return (
-    <div className="relative">
-      <div
-        onClick={() => setIsOpen(!isOpen)}
-        className={className || "w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-800 dark:text-white cursor-pointer flex justify-between items-center transition-all focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600"}
-      >
-        <span className={selected.length === 0 ? "text-slate-400 dark:text-slate-500" : "truncate pr-4 font-medium"}>
-          {selected.length === 0 ? placeholder : selected.join(", ")}
-        </span>
-        <ChevronRight className={`text-slate-400 pointer-events-none transition-transform ${isOpen ? 'rotate-[270deg]' : 'rotate-90'}`} size={16} />
-      </div>
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            className="absolute z-50 w-full mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-y-auto p-1"
-          >
-            {options.map((opt: string) => (
-              <div
-                key={opt}
-                onClick={() => {
-                  if (selected.includes(opt)) onChange(selected.filter((o: string) => o !== opt));
-                  else onChange([...selected, opt]);
-                }}
-                className="flex items-center space-x-2.5 px-3 py-2 rounded-md hover:bg-purple-50 dark:hover:bg-slate-700/60 cursor-pointer transition-colors"
-              >
-                <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${selected.includes(opt) ? 'bg-purple-600 border-purple-600' : 'border-slate-300 dark:border-slate-600'}`}>
-                  {selected.includes(opt) && <Check size={12} className="text-white" />}
-                </div>
-                <span className="text-xs font-medium text-slate-700 dark:text-slate-200">{opt}</span>
-              </div>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
 const FormFieldLabel = ({ icon: Icon, label, required = true }: { icon?: any, label: string, required?: boolean }) => {
   const displayLabel = label && label === label.toUpperCase() && label.length > 3
     ? label.charAt(0).toUpperCase() + label.slice(1).toLowerCase().replace(/_/g, ' ')
@@ -152,9 +111,664 @@ const FormFieldLabel = ({ icon: Icon, label, required = true }: { icon?: any, la
   );
 };
 
-// === Phase 1: Announcement & Official Notification Screen ===
+// === Comprehensive Alumni Publication Controls & Metadata ===
 
-const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin, token, userProfile }: any) => {
+export interface PublicationSettings {
+  announcements: boolean;
+  eligibility: boolean;
+  apply: boolean;
+  applications: boolean;
+  finalList: boolean;
+  voting: boolean;
+  timelines: boolean;
+}
+
+const DEFAULT_PUB_SETTINGS: PublicationSettings = {
+  announcements: true,
+  eligibility: true,
+  apply: true,
+  applications: true,
+  finalList: false,
+  voting: false,
+  timelines: true
+};
+
+const CLOSED_PUB_SETTINGS: PublicationSettings = {
+  announcements: false,
+  eligibility: false,
+  apply: false,
+  applications: false,
+  finalList: false,
+  voting: false,
+  timelines: false
+};
+
+const TAB_PUBLICATION_KEYS: Record<string, keyof PublicationSettings> = {
+  announcements: 'announcements',
+  eligibility: 'eligibility',
+  apply: 'apply',
+  applications: 'applications',
+  finalList: 'finalList',
+  voting: 'voting',
+  ec: 'timelines'
+};
+
+const PUBLICATION_MODULES = [
+  {
+    key: 'announcements',
+    tabId: 'announcements',
+    label: 'Official Announcements & Gazette',
+    shortLabel: 'Announcements',
+    icon: Megaphone,
+    description: 'Official notice calling for AGM conclave, statutory timeline rules, and gazette announcement broadcast.',
+    color: 'purple'
+  },
+  {
+    key: 'eligibility',
+    tabId: 'eligibility',
+    label: 'Eligibility Criteria',
+    shortLabel: 'Eligibility Criteria',
+    icon: ClipboardCheck,
+    description: 'Official candidate qualification, voting eligibility, and nomination verification requirements.',
+    color: 'blue'
+  },
+  {
+    key: 'apply',
+    tabId: 'apply',
+    label: 'Propose Nominee (Nomination Filing)',
+    shortLabel: 'Nomination Filing',
+    icon: UserPlus,
+    description: 'Nomination submission form enabling verified alumni to propose candidates with distinctive seconders.',
+    color: 'emerald'
+  },
+  {
+    key: 'applications',
+    tabId: 'applications',
+    label: 'My Nominations & Status Tracker',
+    shortLabel: 'My Nominations',
+    icon: FolderOpen,
+    description: 'Personal tracker for filed proposals, seconder affirmative consent willingness, and scrutiny progression.',
+    color: 'indigo'
+  },
+  {
+    key: 'finalList',
+    tabId: 'finalList',
+    label: 'Final Certified Candidate Roll',
+    shortLabel: 'Final Candidate Roll',
+    icon: Award,
+    description: 'Certified ballot of eligible candidates after scrutiny review and voluntary withdrawal window closure.',
+    color: 'amber'
+  },
+  {
+    key: 'voting',
+    tabId: 'voting',
+    label: 'Cast Vote & Digital Ballot Box',
+    shortLabel: 'Voting & Ballot',
+    icon: Vote,
+    description: 'Live digital ballot booth allowing verified alumni to cast confidential votes across 6 executive roles.',
+    color: 'rose'
+  },
+  {
+    key: 'timelines',
+    tabId: 'ec',
+    label: 'Election Timelines & Milestones',
+    shortLabel: 'Timelines & Schedule',
+    icon: CalendarDays,
+    description: 'Chronological roadmap of election milestones from 1-month notice to AGM Conclave and ballot counting.',
+    color: 'cyan'
+  }
+];
+
+const AdminPublicationBanner = ({
+  moduleKey,
+  title,
+  isPublished,
+  onToggle,
+  loading
+}: {
+  moduleKey: string;
+  title: string;
+  isPublished: boolean;
+  onToggle: (key: string, nextStatus: boolean) => void;
+  loading?: boolean;
+}) => {
+  return (
+    <div
+      className={`p-3.5 sm:p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs transition-colors ${
+        isPublished
+          ? 'bg-emerald-50/70 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-100'
+          : 'bg-amber-50/70 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-100'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <div
+          className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+            isPublished
+              ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300'
+              : 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-300'
+          }`}
+        >
+          {isPublished ? <CheckCircle2 size={18} /> : <Clock size={18} />}
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider">{title}</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                isPublished
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700'
+                  : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border-amber-200 dark:border-amber-700'
+              }`}
+            >
+              {isPublished ? 'Live: Visible to Alumni' : 'Draft: Hidden from Alumni'}
+            </span>
+          </div>
+          <p className="text-[11px] opacity-80 mt-0.5">
+            {isPublished
+              ? 'This module is currently published and fully accessible to all verified alumni members.'
+              : 'This module is in draft mode and hidden from alumni. Only administrators can view this screen.'}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
+        <button
+          onClick={() => onToggle(moduleKey, !isPublished)}
+          disabled={loading}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs ${
+            isPublished
+              ? 'bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-slate-700 border border-amber-300 dark:border-amber-700'
+              : 'bg-purple-600 hover:bg-purple-700 text-white border border-purple-600'
+          }`}
+        >
+          {loading ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : isPublished ? (
+            <EyeOff size={13} />
+          ) : (
+            <CheckCircle2 size={13} />
+          )}
+          <span>{isPublished ? 'Unpublish from Alumni' : 'Publish Live to Alumni'}</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const AlumniUnpublishedNotice = ({
+  icon: Icon,
+  title,
+  description,
+  badge = "Official Status • Pending Publication",
+  actionLabel = "Return to Dashboard",
+  onAction
+}: any) => {
+  return (
+    <div className="space-y-6 relative z-10 pb-20 max-w-2xl mx-auto text-center pt-8">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-8 sm:p-10 shadow-xs space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto border border-amber-200 dark:border-amber-800/60 shadow-inner">
+          <Icon size={26} />
+        </div>
+        <span className="inline-block px-3 py-1 bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 text-xs font-semibold rounded-full border border-amber-200 dark:border-amber-800">
+          {badge}
+        </span>
+        <h2 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white">
+          {title}
+        </h2>
+        <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed max-w-lg mx-auto">
+          {description}
+        </p>
+        <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+          The Alumni Election Commission will publish and activate this section in accordance with the official election schedule.
+        </div>
+        {onAction && (
+          <div className="pt-2">
+            <button
+              onClick={onAction}
+              className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs rounded-xl shadow-xs transition-colors inline-flex items-center gap-2"
+            >
+              {actionLabel}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const AlumniPublicationModal = ({
+  isOpen,
+  onClose,
+  publicationSettings,
+  onToggleModule,
+  onPublishAll,
+  onUnpublishAll,
+  loadingModule
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  publicationSettings: PublicationSettings;
+  onToggleModule: (key: string, nextStatus: boolean) => void;
+  onPublishAll: () => void;
+  onUnpublishAll: () => void;
+  loadingModule?: string | null;
+}) => {
+  if (!isOpen) return null;
+
+  const totalModules = PUBLICATION_MODULES.length;
+  const publishedCount = PUBLICATION_MODULES.filter(
+    (m) => (publicationSettings as any)[m.key]
+  ).length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        className="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+      >
+        {/* Header */}
+        <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between bg-gradient-to-r from-purple-50/50 via-slate-50 to-indigo-50/40 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800/60">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+              <Globe size={20} />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                Alumni Publication Control Center
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Manage live portal visibility vs administrative draft mode across all election modules.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Overview Bar & Master Controls */}
+        <div className="p-4 bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-200/80 dark:border-slate-800 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Live Alumni Status:
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                  {publishedCount} of {totalModules} Modules Published
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                {publishedCount === totalModules
+                  ? 'All modules are currently live and visible to registered alumni.'
+                  : publishedCount === 0
+                  ? 'All modules are unpublished in administrative draft mode (hidden from alumni).'
+                  : `${totalModules - publishedCount} module(s) currently hidden from alumni.`}
+              </p>
+            </div>
+
+            {/* Master Action Buttons */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={onPublishAll}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+                title="Publish all 7 modules live to alumni"
+              >
+                <CheckCircle2 size={13} />
+                <span>Publish Everything</span>
+              </button>
+              <button
+                onClick={onUnpublishAll}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+                title="Set all 7 modules to draft mode (hidden from alumni)"
+              >
+                <EyeOff size={13} />
+                <span>Unpublish Everything</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Progress track */}
+          <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
+            <div
+              className="bg-gradient-to-r from-purple-600 to-emerald-500 h-full transition-all duration-300"
+              style={{ width: `${(publishedCount / totalModules) * 100}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Modules List */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2.5">
+          {PUBLICATION_MODULES.map((mod) => {
+            const isPub = !!(publicationSettings as any)[mod.key];
+            const isLoading = loadingModule === mod.key;
+            const ModIcon = mod.icon;
+
+            return (
+              <div
+                key={mod.key}
+                className={`p-3.5 sm:p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
+                  isPub
+                    ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-800'
+                    : 'bg-slate-50/60 dark:bg-slate-800/30 border-slate-200/80 dark:border-slate-800/70 opacity-90'
+                }`}
+              >
+                <div className="flex items-start gap-3 min-w-0">
+                  <div
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                      isPub
+                        ? 'bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <ModIcon size={18} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                        {mod.label}
+                      </h4>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border flex items-center gap-1 ${
+                          isPub
+                            ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                            : 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                        }`}
+                      >
+                        {isPub ? <CheckCircle2 size={10} /> : <Clock size={10} />}
+                        {isPub ? 'Live to Alumni' : 'Draft: Hidden'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                      {mod.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
+                  <button
+                    onClick={() => onToggleModule(mod.key, !isPub)}
+                    disabled={isLoading}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs ${
+                      isPub
+                        ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 border border-amber-200 dark:border-amber-800'
+                        : 'bg-purple-600 hover:bg-purple-700 text-white border border-purple-600'
+                    }`}
+                  >
+                    {isLoading ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : isPub ? (
+                      <EyeOff size={12} />
+                    ) : (
+                      <CheckCircle2 size={12} />
+                    )}
+                    <span>{isPub ? 'Unpublish' : 'Publish Live'}</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Modal Footer */}
+        <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-medium text-xs rounded-xl transition-colors shadow-xs"
+          >
+            Done
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+// === Reusable Notify Alumni Modal (Broadcast to All or Send to Single Person) ===
+
+interface NotifyAlumniModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  subtitle: string;
+  badge?: string;
+  onSend: (targetMode: 'all' | 'single', recipientEmail: string) => Promise<void> | void;
+  isLoading: boolean;
+}
+
+const NotifyAlumniModal = ({
+  isOpen,
+  onClose,
+  title,
+  subtitle,
+  badge = 'Official Election Broadcast',
+  onSend,
+  isLoading
+}: NotifyAlumniModalProps) => {
+  const [targetMode, setTargetMode] = useState<'all' | 'single'>('all');
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [emailError, setEmailError] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setTargetMode('all');
+      setRecipientEmail('');
+      setEmailError('');
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (targetMode === 'single') {
+      const trimmed = recipientEmail.trim();
+      if (!trimmed || !trimmed.includes('@') || !trimmed.includes('.')) {
+        setEmailError('Please enter a valid recipient email address.');
+        return;
+      }
+      setEmailError('');
+      onSend('single', trimmed);
+    } else {
+      onSend('all', '');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col"
+      >
+        {/* Header */}
+        <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Send size={18} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  {title}
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                  {badge}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {subtitle}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={isLoading}
+            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {/* Target Audience Option Buttons */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
+              Select Delivery Audience
+            </label>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setTargetMode('all');
+                  setEmailError('');
+                }}
+                className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                  targetMode === 'all'
+                    ? 'border-purple-600 bg-purple-50/60 dark:bg-purple-950/40 text-purple-900 dark:text-purple-100 ring-1 ring-purple-600'
+                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                    targetMode === 'all' ? 'bg-purple-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                  }`}>
+                    <Users size={14} />
+                  </div>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    targetMode === 'all' ? 'bg-purple-200/80 dark:bg-purple-900/80 text-purple-800 dark:text-purple-200' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                  }`}>
+                    Broadcast
+                  </span>
+                </div>
+                <div>
+                  <div className="font-bold text-xs">All Alumni</div>
+                  <div className="text-[11px] opacity-75 mt-0.5">Blast email to all verified alumni members</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTargetMode('single')}
+                className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                  targetMode === 'single'
+                    ? 'border-purple-600 bg-purple-50/60 dark:bg-purple-950/40 text-purple-900 dark:text-purple-100 ring-1 ring-purple-600'
+                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                    targetMode === 'single' ? 'bg-purple-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                  }`}>
+                    <Mail size={14} />
+                  </div>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    targetMode === 'single' ? 'bg-purple-200/80 dark:bg-purple-900/80 text-purple-800 dark:text-purple-200' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                  }`}>
+                    Single Person
+                  </span>
+                </div>
+                <div>
+                  <div className="font-bold text-xs">Single Recipient</div>
+                  <div className="text-[11px] opacity-75 mt-0.5">Send directly to one designated email address</div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Single Email Input */}
+          {targetMode === 'single' && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="space-y-1.5 pt-1"
+            >
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                <span>Recipient Email Address <span className="text-rose-500">*</span></span>
+                <span className="text-[10px] text-slate-400">Must be a valid email</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="email"
+                  value={recipientEmail}
+                  onChange={(e) => {
+                    setRecipientEmail(e.target.value);
+                    if (emailError) setEmailError('');
+                  }}
+                  placeholder="alumnus@domain.com"
+                  required
+                  autoFocus
+                  className={`w-full bg-white dark:bg-slate-800 border rounded-xl px-3.5 py-2.5 pl-9 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 ${
+                    emailError ? 'border-rose-400' : 'border-slate-300 dark:border-slate-700'
+                  }`}
+                />
+                <Mail size={14} className="absolute left-3 top-3 text-slate-400" />
+              </div>
+              {emailError && (
+                <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+                  {emailError}
+                </p>
+              )}
+            </motion.div>
+          )}
+
+          {/* Info Notice */}
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 rounded-xl text-[11px] text-slate-600 dark:text-slate-400 space-y-1">
+            <div className="flex items-center justify-between font-medium">
+              <span className="flex items-center gap-1.5">
+                <ShieldCheck size={13} className="text-emerald-600" />
+                Sender: <strong>muralisubbu11@gmail.com</strong>
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">Official EC Dispatch</span>
+            </div>
+            <p className="opacity-80">
+              {targetMode === 'all'
+                ? 'All registered alumni will receive official gazette details with verified links.'
+                : `A personalized election dispatch will be transmitted specifically to ${recipientEmail || 'the specified member'}.`}
+            </p>
+          </div>
+
+          {/* Footer buttons */}
+          <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isLoading}
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading || (targetMode === 'single' && !recipientEmail.trim())}
+              className="px-5 py-2 rounded-xl text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white shadow-xs transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  <span>Sending Dispatch...</span>
+                </>
+              ) : (
+                <>
+                  <Send size={13} />
+                  <span>{targetMode === 'all' ? 'Send to All Alumni' : 'Send to Single Person'}</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+};
+
+const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin, token, userProfile, publicationSettings, onTogglePublish }: any) => {
   const [announcement, setAnnouncement] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showGazetteModal, setShowGazetteModal] = useState(false);
@@ -217,9 +831,9 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
     finalListDate: "2026-10-18T10:00:00.000Z",
     votingDateTime: "2026-10-25T10:00:00.000Z",
     contactInfo: "",
-    emailSubject: "OFFICIAL NOTIFICATION: Alumni Association Office Bearer Elections 2026 – Call for Nominations [Ref: AA/ELEC/2026/01]",
-    emailIntro: "Notice is hereby formally given to all registered alumni members regarding the Alumni Association General Election for Executive Office Bearers for the 2026–2028 tenure.",
-    emailBody: "Nominations are hereby called for the positions of Office Bearers for the term 2026–2028. Published via the official Alumni portal at least one month prior to the AGM.",
+    emailSubject: "National Engineering College Alumni Association Election 2026: Official notice and schedule [AA/ELEC/2026/01]",
+    emailIntro: "The Alumni Association Election Commission invites eligible alumni members to participate in the 2026 election for Executive Office Bearers.",
+    emailBody: "This notice summarises the eligibility requirements, nomination process, publication milestones and voting window. All election actions and status updates are handled through the Alumni Election Portal.",
     emailCustomNotes: "",
     emailSignOffAuthorized: "Alumni Election Commission",
     emailSignOffApproved: "Patron & Principal"
@@ -259,9 +873,9 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
             finalListDate: ann.finalListDate || "2026-10-18T10:00:00.000Z",
             votingDateTime: ann.votingDateTime || "2026-10-25T10:00:00.000Z",
             contactInfo: ann.contactInfo || "",
-            emailSubject: ann.emailSubject || `OFFICIAL NOTIFICATION: ${title} – Call for Nominations [Ref: ${notif}]`,
-            emailIntro: ann.emailIntro || `Notice is hereby formally given to all registered alumni members regarding the Alumni Association General Election for Executive Office Bearers for the ${yr}–${Number(yr) + 2} tenure.`,
-            emailBody: ann.emailBody || ann.description || "Nominations are hereby called for the positions of Office Bearers for the term 2026–2028. Published via the official Alumni portal at least one month prior to the AGM.",
+            emailSubject: ann.emailSubject || `National Engineering College Alumni Association Election ${yr}: Official notice and schedule [${notif}]`,
+            emailIntro: ann.emailIntro || `The Alumni Association Election Commission invites eligible alumni members to participate in the ${yr} election for Executive Office Bearers.`,
+            emailBody: ann.emailBody || ann.description || "This notice summarises the eligibility requirements, nomination process, publication milestones and voting window. All election actions and status updates are handled through the Alumni Election Portal.",
             emailCustomNotes: ann.emailCustomNotes || "",
             emailSignOffAuthorized: ann.emailSignOffAuthorized || "Alumni Election Commission",
             emailSignOffApproved: ann.emailSignOffApproved || "Patron & Principal"
@@ -316,6 +930,9 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
       if (res.ok) {
         setAnnouncement(payload);
         setEditForm(payload);
+        if (onTogglePublish && overrideStatus) {
+          onTogglePublish('announcements', overrideStatus === 'published');
+        }
         alert(overrideStatus === 'published' ? 'Announcement successfully published live to all alumni!' : overrideStatus === 'draft' ? 'Announcement set to draft mode (hidden from alumni).' : 'Announcement details saved successfully.');
       } else {
         alert(data.error || 'Failed to save announcement');
@@ -405,7 +1022,9 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
     }
   };
 
-  const isPublished = announcement && announcement.status === 'published';
+  const isPublished = publicationSettings?.announcements !== undefined
+    ? publicationSettings.announcements
+    : (announcement && announcement.status === 'published');
 
   // Format date helper
   const formatDateDisplay = (dateStr: string, fallback: string) => {
@@ -415,6 +1034,25 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
     } catch {
       return fallback;
     }
+  };
+
+  const toTimeInputValue = (value: string, fallback: string) => {
+    const match = String(value || fallback).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+    if (!match) return fallback;
+    let hour = Number(match[1]);
+    const meridiem = (match[3] || '').toUpperCase();
+    if (meridiem === 'AM' && hour === 12) hour = 0;
+    if (meridiem === 'PM' && hour !== 12) hour += 12;
+    return `${String(hour).padStart(2, '0')}:${match[2]}`;
+  };
+
+  const fromTimeInputValue = (value: string) => {
+    if (!value) return '';
+    const [hourText, minute = '00'] = value.split(':');
+    const hour = Number(hourText);
+    const meridiem = hour >= 12 ? 'PM' : 'AM';
+    const displayHour = hour % 12 || 12;
+    return `${String(displayHour).padStart(2, '0')}:${minute} ${meridiem}`;
   };
 
   // If alumni and not published, display clean read-only pending screen
@@ -437,14 +1075,14 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
           <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
             Once certified and published, the complete election schedule, nomination deadline, and AGM date will appear here and will be broadcast to your registered email.
           </div>
-          <div className="pt-2">
+          {publicationSettings?.eligibility && <div className="pt-2">
             <button
               onClick={onProceedToEligibility}
               className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs rounded-xl shadow-xs transition-colors inline-flex items-center gap-2"
             >
-              <ClipboardCheck size={15} /> Evaluate Nominee Eligibility Meanwhile
+              <ClipboardCheck size={15} /> View Eligibility Criteria
             </button>
-          </div>
+          </div>}
         </div>
       </div>
     );
@@ -452,6 +1090,16 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
 
   return (
     <div className="space-y-6 relative z-10 pb-16">
+      {/* Admin Publication Control Banner */}
+      {isAdmin && publicationSettings && (
+        <AdminPublicationBanner
+          moduleKey="announcements"
+          title="Official Announcements & Election Gazette"
+          isPublished={publicationSettings.announcements}
+          onToggle={onTogglePublish}
+        />
+      )}
+
       {/* Admin Management Toolbar (Admin Only) */}
       {isAdmin && (
         <motion.div
@@ -505,22 +1153,9 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
                   setShowEmailModal(true);
                 }}
                 className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
-                title="Send official election announcement to all registered alumni members"
+                title="Notify all alumni or a single alumni member"
               >
-                <Users size={13} /> Send to All Alumni
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setEmailTargetMode('single');
-                  setBroadcastResult(null);
-                  setShowEmailModal(true);
-                }}
-                className="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 border border-slate-200 dark:border-slate-700"
-                title="Send official call for announcement to one single person"
-              >
-                <Send size={13} /> Send to Person
+                <Send size={13} /> Notify Alumni
               </button>
 
               <button
@@ -690,18 +1325,44 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
                   />
                 </div>
 
-                <div>
-                  <label className="font-medium text-slate-600 dark:text-slate-400 block mb-1">Voting Schedule / Hours</label>
-                  <input
-                    type="text"
-                    value={editForm.electionStartTime + " - " + editForm.electionEndTime}
-                    onChange={(e) => {
-                      const parts = e.target.value.split('-');
-                      setEditForm({ ...editForm, electionStartTime: parts[0]?.trim() || '', electionEndTime: parts[1]?.trim() || '' });
-                    }}
-                    placeholder="10:00 AM - 04:00 PM"
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600"
-                  />
+                <div className="sm:col-span-2">
+                  <label className="font-medium text-slate-600 dark:text-slate-400 block mb-1">Voting Date & Hours</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-[1.35fr_1fr_1fr] gap-2">
+                    <input
+                      type="date"
+                      required
+                      aria-label="Voting date"
+                      title="Voting date"
+                      value={(editForm.electionDate || editForm.votingDateTime || '').substring(0, 10)}
+                      onChange={(e) => {
+                        const votingDate = e.target.value;
+                        setEditForm({
+                          ...editForm,
+                          electionDate: votingDate,
+                          votingDateTime: votingDate ? new Date(votingDate).toISOString() : ''
+                        });
+                      }}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600"
+                    />
+                    <input
+                      type="time"
+                      required
+                      aria-label="Voting start time"
+                      title="Voting start time"
+                      value={toTimeInputValue(editForm.electionStartTime, '10:00')}
+                      onChange={(e) => setEditForm({ ...editForm, electionStartTime: fromTimeInputValue(e.target.value) })}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600"
+                    />
+                    <input
+                      type="time"
+                      required
+                      aria-label="Voting end time"
+                      title="Voting end time"
+                      value={toTimeInputValue(editForm.electionEndTime, '16:00')}
+                      onChange={(e) => setEditForm({ ...editForm, electionEndTime: fromTimeInputValue(e.target.value) })}
+                      className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg p-2 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -781,12 +1442,14 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
                 >
                   <FileText size={15} className="text-purple-600" /> View Gazette Notice
                 </button>
-                <button
-                  onClick={onProceedToApply}
-                  className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-xs flex items-center justify-center gap-2 transition-colors shadow-xs"
-                >
-                  <UserPlus size={15} /> Propose a Candidate
-                </button>
+                {(isAdmin || publicationSettings?.apply) && (
+                  <button
+                    onClick={onProceedToApply}
+                    className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-xs flex items-center justify-center gap-2 transition-colors shadow-xs"
+                  >
+                    <UserPlus size={15} /> Propose a Candidate
+                  </button>
+                )}
               </div>
             </div>
           </motion.div>
@@ -1378,7 +2041,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
                         <tr className="bg-emerald-50/50 dark:bg-emerald-950/20">
                           <td className="p-2 text-center font-semibold text-emerald-600">6</td>
                           <td className="p-2 font-semibold text-emerald-700 dark:text-emerald-400">Electronic Polling (Secret Ballot)</td>
-                          <td className="p-2 text-right font-semibold text-emerald-700 dark:text-emerald-400">{formatDateDisplay(announcement?.electionDate, 'Sunday, October 25, 2026')} • 10:00 AM – 04:00 PM</td>
+                          <td className="p-2 text-right font-semibold text-emerald-700 dark:text-emerald-400">{formatDateDisplay(announcement?.electionDate || announcement?.votingDateTime, 'Sunday, October 25, 2026')} • {announcement?.electionStartTime || '10:00 AM'} – {announcement?.electionEndTime || '04:00 PM'}</td>
                         </tr>
                         <tr>
                           <td className="p-2 text-center font-medium text-slate-400">7</td>
@@ -1433,7 +2096,7 @@ const AnnouncementScreen = ({ onProceedToEligibility, onProceedToApply, isAdmin,
 
 // === Phase 2: Eligibility Criteria Checker Screen ===
 
-const EligibilityScreen = ({ onProceedToApply }: any) => {
+const EligibilityScreen = ({ onProceedToApply, isAdmin, publicationSettings, onTogglePublish, onNavigate }: any) => {
   const [targetPosition, setTargetPosition] = useState(ELECTION_POSITIONS[0]);
   const [roleCategory, setRoleCategory] = useState(RESPONSIBILITY_CATEGORIES[0].id);
   const [wasOfficeBearerInPast5Years, setWasOfficeBearerInPast5Years] = useState("yes");
@@ -1521,20 +2184,44 @@ const EligibilityScreen = ({ onProceedToApply }: any) => {
     });
   };
 
+  // If alumni and module is unpublished, display clean pending screen
+  if (!isAdmin && publicationSettings && !publicationSettings.eligibility) {
+    return (
+      <AlumniUnpublishedNotice
+        icon={ClipboardCheck}
+        title="Eligibility Criteria Not Yet Published"
+        description="The Alumni Election Commission has not yet published the official eligibility criteria for this election cycle."
+        actionLabel="Return to Dashboard"
+        onAction={() => onNavigate && onNavigate('dashboard')}
+      />
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-      className="max-w-4xl mx-auto glass-panel p-6 sm:p-8 relative z-10 space-y-6"
+      className="max-w-4xl mx-auto space-y-6 relative z-10 pb-16"
     >
-      {/* Page Header */}
-      <div className="pb-2 border-b border-slate-100 dark:border-slate-800">
-        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-          Nominee Eligibility Evaluator
-        </h2>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Verify the nominee against the official eligibility criteria.
-        </p>
-      </div>
+      {/* Admin Publication Control Banner */}
+      {isAdmin && publicationSettings && (
+        <AdminPublicationBanner
+          moduleKey="eligibility"
+          title="Eligibility Criteria"
+          isPublished={publicationSettings.eligibility}
+          onToggle={onTogglePublish}
+        />
+      )}
+
+      <div className="glass-panel p-6 sm:p-8 space-y-6">
+        {/* Page Header */}
+        <div className="pb-2 border-b border-slate-100 dark:border-slate-800">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+            Eligibility Criteria
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Verify the nominee against the official eligibility criteria.
+          </p>
+        </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Form Controls */}
@@ -1810,13 +2497,161 @@ const EligibilityScreen = ({ onProceedToApply }: any) => {
           </AnimatePresence>
         </div>
       </div>
+      </div>
+    </motion.div>
+  );
+};
+
+const EligibilityCriteriaScreen = ({ isAdmin, publicationSettings, onTogglePublish, onNavigate }: any) => {
+  const recognizedResponsibilities = [
+    'Office Bearer',
+    'Chapter Coordinator',
+    'Club Coordinator',
+    'Mentorship or Placement Coordinator',
+    'Data Management Team Coordinator'
+  ];
+
+  if (!isAdmin && publicationSettings && !publicationSettings.eligibility) {
+    return (
+      <AlumniUnpublishedNotice
+        icon={ClipboardCheck}
+        title="Eligibility Criteria Not Published"
+        description="The Alumni Election Commission has not published the official eligibility criteria for alumni members."
+        actionLabel="Return to Dashboard"
+        onAction={() => onNavigate && onNavigate('dashboard')}
+      />
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mx-auto max-w-4xl space-y-6 pb-16"
+    >
+      {isAdmin && publicationSettings && (
+        <AdminPublicationBanner
+          moduleKey="eligibility"
+          title="Eligibility Criteria"
+          isPublished={publicationSettings.eligibility}
+          onToggle={onTogglePublish}
+        />
+      )}
+
+      <header className="border-b border-slate-200 pb-5 dark:border-slate-800">
+        <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-purple-700 dark:text-purple-300">
+          <ClipboardCheck size={15} />
+          <span>Official election bylaws</span>
+        </div>
+        <h1 className="text-xl font-bold text-slate-900 dark:text-white sm:text-2xl">Eligibility Criteria</h1>
+        <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400 sm:text-sm">
+          Qualification requirements for candidates, voters, and nomination verification.
+        </p>
+      </header>
+
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="divide-y divide-slate-200 dark:divide-slate-800">
+          <section className="p-5 sm:p-6" aria-labelledby="president-eligibility-title">
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">
+                <Award size={19} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400">01</span>
+                  <h2 id="president-eligibility-title" className="text-sm font-bold text-slate-900 dark:text-white sm:text-base">President Eligibility</h2>
+                </div>
+                <p className="mt-2 text-xs leading-6 text-slate-600 dark:text-slate-300 sm:text-sm">
+                  To contest for President, a candidate must have served as an <strong className="font-semibold text-slate-900 dark:text-white">Office Bearer of the Alumni Association</strong> at least once during the five years immediately before the election <strong className="font-semibold text-slate-900 dark:text-white">(2021-2026)</strong>.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="p-5 sm:p-6" aria-labelledby="office-bearer-eligibility-title">
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                <Briefcase size={19} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">02</span>
+                  <h2 id="office-bearer-eligibility-title" className="text-sm font-bold text-slate-900 dark:text-white sm:text-base">Eligibility for Other Office Bearer Positions</h2>
+                </div>
+                <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 sm:text-sm">Candidates must meet all of the following requirements:</p>
+
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <p className="text-xs leading-5 text-slate-600 dark:text-slate-300 sm:text-sm">Be registered alumni members on the Alumni Website Portal.</p>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <p className="text-xs leading-5 text-slate-600 dark:text-slate-300 sm:text-sm">Have at least one continuous year of active service, without any break, during the last five years.</p>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <CheckCircle2 size={16} className="mt-0.5 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <p className="text-xs leading-5 text-slate-600 dark:text-slate-300 sm:text-sm">Have held at least one recognized responsibility in the Alumni Association.</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-lg bg-slate-50 p-4 dark:bg-slate-800/60">
+                  <h3 className="text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400">Recognized responsibilities</h3>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {recognizedResponsibilities.map((responsibility) => (
+                      <div key={responsibility} className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200">
+                        <Check size={13} className="flex-shrink-0 text-purple-600 dark:text-purple-400" />
+                        <span>{responsibility}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="p-5 sm:p-6" aria-labelledby="voter-eligibility-title">
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                <Vote size={19} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">03</span>
+                  <h2 id="voter-eligibility-title" className="text-sm font-bold text-slate-900 dark:text-white sm:text-base">Who Can Vote?</h2>
+                </div>
+                <p className="mt-2 text-xs leading-6 text-slate-600 dark:text-slate-300 sm:text-sm">
+                  All verified, registered alumni members can vote. Each member can cast one vote for each contested position through a secure, confidential ballot.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="p-5 sm:p-6" aria-labelledby="nomination-verification-title">
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                <ShieldCheck size={19} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">04</span>
+                  <h2 id="nomination-verification-title" className="text-sm font-bold text-slate-900 dark:text-white sm:text-base">Nomination Verification</h2>
+                </div>
+                <p className="mt-2 text-xs leading-6 text-slate-600 dark:text-slate-300 sm:text-sm">
+                  All nominations will be checked against the official election bylaws. The final decision will be made according to these rules and will be binding.
+                </p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
     </motion.div>
   );
 };
 
 // === Phase 3: Proposal-Driven Nomination Form (NO SELF-NOMINATION) ===
 
-const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
+const ApplyScreen = ({ userProfile, onNominationSuccess, isAdmin, publicationSettings, onTogglePublish, onNavigate }: any) => {
   // Proposer is the logged-in user
   const proposer = {
     name: userProfile?.name || "Tharun G",
@@ -1829,28 +2664,26 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
 
   // Nominee Details
   const [nominee, setNominee] = useState({
-    name: "Chockalingam D",
-    email: "chocka.nec@gmail.com",
-    department: "CSE",
-    graduationYear: "2012",
-    phone: "+91-8778663589",
-    alumniId: "ALUM-2012-NEC"
+    name: "",
+    email: "",
+    department: "",
+    graduationYear: "",
+    phone: "",
+    alumniId: ""
   });
 
   const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
-  const [targetPositions, setTargetPositions] = useState<string[]>(["President"]);
-  const [roleCategory, setRoleCategory] = useState("Office Bearer");
-  const [continuousDuration, setContinuousDuration] = useState("2.5");
-  const [continuousDetails, setContinuousDetails] = useState("Served as Treasurer and Joint Secretary 2022-2026 without interruption.");
+  const [targetPosition, setTargetPosition] = useState(ELECTION_POSITIONS[0]);
+  const [roleYearAssignments, setRoleYearAssignments] = useState<Record<string, string[]>>({});
 
   // Seconder Details (Distinct eligible member)
   const [seconder, setSeconder] = useState({
-    name: "Priya Sridharan",
-    alumniId: "ALUM-2014-118",
-    email: "priya.sridharan@alumni.org",
-    phone: "+91 97890 65432",
-    batch: "2014",
-    department: "ECE"
+    name: "",
+    alumniId: "",
+    email: "",
+    phone: "",
+    batch: "",
+    department: ""
   });
 
   // Alumni database lookup states
@@ -1991,9 +2824,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
     return () => clearTimeout(timer);
   }, [seconder.email]);
 
-  const [purposeStatement, setPurposeStatement] = useState(
-    "I propose this candidate for election based on their verified service as an Office Bearer over the past four years. They have spearheaded alumni initiatives, mobilized student placement programs, and demonstrated outstanding commitment to our association."
-  );
+  const [purposeStatement, setPurposeStatement] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasEndorsementDeclaration, setHasEndorsementDeclaration] = useState(false);
@@ -2002,6 +2833,19 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
 
   const wordCount = purposeStatement.trim() ? purposeStatement.trim().split(/\s+/).length : 0;
   const isPurposeStatementSufficient = wordCount >= 15;
+  const selectedPreviousRoles = RESPONSIBILITY_CATEGORIES
+    .filter(category => Object.prototype.hasOwnProperty.call(roleYearAssignments, category.id))
+    .map(category => category.id);
+  const sortedServiceYears = [...new Set(Object.values(roleYearAssignments).flat())]
+    .sort((a, b) => Number(a) - Number(b));
+  const hasContinuousServiceYears = sortedServiceYears.length > 0
+    && sortedServiceYears.every((year, index) => index === 0 || Number(year) === Number(sortedServiceYears[index - 1]) + 1);
+  const rolesMissingServiceYears = selectedPreviousRoles.filter(role => (roleYearAssignments[role] || []).length === 0);
+  const officeBearerServiceYears = roleYearAssignments["Office Bearer"] || [];
+  const hasValidRoleExperience = selectedPreviousRoles.length > 0
+    && rolesMissingServiceYears.length === 0
+    && hasContinuousServiceYears
+    && (targetPosition !== "President" || officeBearerServiceYears.length > 0);
 
   // Real-time Participant Conflict Checks
   const isSelfNomination = proposer.email.toLowerCase().trim() === nominee.email.toLowerCase().trim();
@@ -2036,6 +2880,24 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
       return;
     }
 
+    if (selectedPreviousRoles.length === 0) {
+      setErrorMsg("Select at least one previous responsibility held by the nominee.");
+      setFieldErrors(prev => ({ ...prev, previousRoles: "Select at least one previous role." }));
+      return;
+    }
+
+    if (rolesMissingServiceYears.length > 0) {
+      setErrorMsg(`Select at least one service year for: ${rolesMissingServiceYears.join(", ")}.`);
+      setFieldErrors(prev => ({ ...prev, serviceYears: "Every selected role must have at least one service year." }));
+      return;
+    }
+
+    if (!hasContinuousServiceYears) {
+      setErrorMsg("The selected service years must be consecutive without a break.");
+      setFieldErrors(prev => ({ ...prev, serviceYears: "Service years must be consecutive." }));
+      return;
+    }
+
     if (!isPurposeStatementSufficient) {
       setErrorMsg("Purpose and citation statement must include sufficient detail relevant to the position being sought (at least 15 words).");
       return;
@@ -2046,13 +2908,13 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
       return;
     }
 
-    const isPresidentCandidate = targetPositions.includes("President");
-    if (isPresidentCandidate && roleCategory !== "Office Bearer") {
+    const isPresidentCandidate = targetPosition === "President";
+    if (isPresidentCandidate && officeBearerServiceYears.length === 0) {
       const errMsg = "Ineligible for President";
       setErrorMsg(errMsg);
       setFieldErrors(prev => ({
         ...prev,
-        roleCategory: errMsg
+        previousRoles: "President nominees must have at least one Office Bearer service year."
       }));
       return;
     }
@@ -2061,17 +2923,25 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
     try {
       const res = await fetch('http://localhost:5000/api/applications', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('ems_token') || ''}`
+        },
         body: JSON.stringify({
           proposer,
           nominee,
           nomineePhoto: nomineePhoto || null,
-          targetPositions,
-          roleCategory,
+          targetPositions: [targetPosition],
+          previousRoles: selectedPreviousRoles,
+          roleDurations: roleYearAssignments,
+          roleCategory: selectedPreviousRoles.join(", "),
           continuousService: {
-            years: parseFloat(continuousDuration) || 1,
+            years: sortedServiceYears.length,
+            serviceYears: sortedServiceYears,
             withoutGap: true,
-            details: continuousDetails
+            details: selectedPreviousRoles
+              .map(role => `${role}: ${[...(roleYearAssignments[role] || [])].sort((a, b) => Number(a) - Number(b)).join(", ")}`)
+              .join("; ")
           },
           seconder,
           purposeStatement,
@@ -2107,11 +2977,35 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
     }
   };
 
+  // If alumni and module is unpublished, display clean pending screen
+  if (!isAdmin && publicationSettings && !publicationSettings.apply) {
+    return (
+      <AlumniUnpublishedNotice
+        icon={UserPlus}
+        badge="Status • Nominations Closed / Unpublished"
+        title="Nomination Filing Closed / Unpublished"
+        description="The official nomination proposal window is currently closed or has not yet been published by the Election Commission. Nomination submissions cannot be accepted at this time."
+        actionLabel="Return to Dashboard"
+        onAction={() => onNavigate && onNavigate('dashboard')}
+      />
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
       className="max-w-3xl mx-auto space-y-6 relative z-10 pb-16"
     >
+      {/* Admin Publication Control Banner */}
+      {isAdmin && publicationSettings && (
+        <AdminPublicationBanner
+          moduleKey="apply"
+          title="Nomination Filing (Propose Nominee)"
+          isPublished={publicationSettings.apply}
+          onToggle={onTogglePublish}
+        />
+      )}
+
       <div className="text-center">
         <h1 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
           Nominate an Alumni
@@ -2137,7 +3031,7 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
             </div>
 
             <p className="text-slate-600 dark:text-slate-300 max-w-lg text-xs sm:text-sm leading-relaxed">
-              You have initiated a nomination for <strong>{nominee.name}</strong> for the office of <strong>{targetPositions.join(", ")}</strong>.
+              You have initiated a nomination for <strong>{nominee.name}</strong> for the office of <strong>{targetPosition}</strong>.
             </p>
 
             {/* Explanatory Callout Box */}
@@ -2436,92 +3330,155 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
 
               <div>
                 <FormFieldLabel label="Position proposing for" />
-                <MultiSelectDropdown
-                  options={ELECTION_POSITIONS}
-                  selected={targetPositions}
-                  onChange={(newPositions: string[]) => {
-                    setTargetPositions(newPositions);
-                    if (newPositions.includes("President") && roleCategory !== "Office Bearer") {
-                      setFieldErrors(prev => ({
-                        ...prev,
-                        roleCategory: "Ineligible for President"
-                      }));
-                    } else if (!newPositions.includes("President")) {
-                      setFieldErrors(prev => {
-                        const next = { ...prev };
-                        delete next.roleCategory;
-                        return next;
-                      });
-                    }
-                  }}
-                  placeholder="Select position(s)..."
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                <div>
-                  <FormFieldLabel label="Nominee's qualifying responsibility role" />
+                <div className="relative">
                   <select
-                    value={roleCategory}
+                    value={targetPosition}
                     onChange={(e) => {
-                      const val = e.target.value;
-                      setRoleCategory(val);
-                      if (targetPositions.includes("President") && val !== "Office Bearer") {
+                      const newPosition = e.target.value;
+                      setTargetPosition(newPosition);
+                      if (newPosition === "President" && officeBearerServiceYears.length === 0) {
                         setFieldErrors(prev => ({
                           ...prev,
-                          roleCategory: "Ineligible for President"
+                          previousRoles: "President nominees must have at least one Office Bearer service year."
                         }));
                       } else {
                         setFieldErrors(prev => {
                           const next = { ...prev };
-                          delete next.roleCategory;
+                          delete next.previousRoles;
                           return next;
                         });
                       }
                     }}
-                    className={`w-full bg-white dark:bg-slate-900 border rounded-lg px-3.5 py-2.5 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 ${targetPositions.includes("President") && roleCategory !== "Office Bearer"
-                        ? "border-rose-500 focus:ring-rose-500/20"
-                        : "border-slate-300 dark:border-slate-700"
-                      }`}
+                    required
+                    className="w-full appearance-none bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3.5 py-2.5 pr-10 text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600"
                   >
-                    {RESPONSIBILITY_CATEGORIES.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.label}
-                      </option>
+                    {ELECTION_POSITIONS.map(position => (
+                      <option key={position} value={position}>{position}</option>
                     ))}
                   </select>
-                  {targetPositions.includes("President") && roleCategory !== "Office Bearer" && (
-                    <div className="mt-1.5 p-2 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400 text-xs flex items-center gap-1.5 font-medium">
-                      <AlertCircle size={13} className="flex-shrink-0" />
-                      <span>Ineligible for President (Requires Office Bearer experience)</span>
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <FormFieldLabel label="Nominee's unbroken service (Years in past 5 yrs)" />
-                  <input
-                    type="number"
-                    min="1"
-                    step="0.5"
-                    value={continuousDuration}
-                    onChange={(e) => setContinuousDuration(e.target.value)}
-                    required
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3.5 py-2.5 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600"
-                    placeholder="e.g. 2"
+                  <ChevronRight
+                    size={16}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 rotate-90 text-slate-400 pointer-events-none"
                   />
                 </div>
               </div>
 
               <div>
-                <FormFieldLabel label="Summary of nominee's continuous service" />
-                <textarea
-                  rows={2}
-                  value={continuousDetails}
-                  onChange={(e) => setContinuousDetails(e.target.value)}
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3.5 py-2 text-xs text-slate-900 dark:text-white resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600"
-                  placeholder="Specify committees, chapter, clubs, or bearer posts served continuously..."
-                />
+                <FormFieldLabel label="Nominee's previous responsibilities and service years" />
+                <div className="space-y-2">
+                  {RESPONSIBILITY_CATEGORIES.map(category => {
+                    const isRoleSelected = Object.prototype.hasOwnProperty.call(roleYearAssignments, category.id);
+                    const assignedYears = roleYearAssignments[category.id] || [];
+                    return (
+                      <div
+                        key={category.id}
+                        className={`rounded-lg border transition-colors ${isRoleSelected
+                            ? 'border-purple-300 bg-purple-50/40 dark:border-purple-800 dark:bg-purple-950/20'
+                            : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900'
+                          }`}
+                      >
+                        <label className="flex cursor-pointer items-start gap-2.5 px-3 py-2.5">
+                          <input
+                            type="checkbox"
+                            checked={isRoleSelected}
+                            onChange={() => {
+                              setRoleYearAssignments(current => {
+                                const next = { ...current };
+                                if (Object.prototype.hasOwnProperty.call(next, category.id)) delete next[category.id];
+                                else next[category.id] = [];
+                                return next;
+                              });
+                              setFieldErrors(prev => {
+                                const next = { ...prev };
+                                delete next.previousRoles;
+                                delete next.serviceYears;
+                                return next;
+                              });
+                            }}
+                            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-xs font-semibold text-slate-900 dark:text-white">{category.label}</span>
+                            <span className="mt-0.5 block text-[11px] leading-snug text-slate-500 dark:text-slate-400">{category.description}</span>
+                          </span>
+                        </label>
+
+                        {isRoleSelected && (
+                          <div className="border-t border-purple-200/70 px-3 pb-3 pt-2.5 dark:border-purple-800/60">
+                            <p className="mb-2 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                              Years served as {category.label}
+                            </p>
+                            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                              {NOMINEE_SERVICE_YEARS.map(year => {
+                                const assignedRole = selectedPreviousRoles.find(role => (roleYearAssignments[role] || []).includes(year));
+                                const isSelected = assignedYears.includes(year);
+                                const isUnavailable = Boolean(assignedRole && assignedRole !== category.id);
+                                return (
+                                  <label
+                                    key={year}
+                                    title={isUnavailable ? `${year} is already assigned to ${assignedRole}` : `Service during ${year}`}
+                                    className={`flex min-h-9 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-semibold transition-colors ${isUnavailable
+                                        ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400 opacity-70 dark:border-slate-700 dark:bg-slate-800'
+                                        : isSelected
+                                          ? 'cursor-pointer border-purple-600 bg-purple-600 text-white'
+                                          : 'cursor-pointer border-slate-300 bg-white text-slate-700 hover:border-purple-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300'
+                                      }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      disabled={isUnavailable}
+                                      onChange={() => {
+                                        setRoleYearAssignments(current => {
+                                          const currentYears = current[category.id] || [];
+                                          return {
+                                            ...current,
+                                            [category.id]: currentYears.includes(year)
+                                              ? currentYears.filter(value => value !== year)
+                                              : [...currentYears, year]
+                                          };
+                                        });
+                                        setFieldErrors(prev => {
+                                          const next = { ...prev };
+                                          delete next.previousRoles;
+                                          delete next.serviceYears;
+                                          return next;
+                                        });
+                                      }}
+                                      className="h-3.5 w-3.5 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                                    />
+                                    <span>{year}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {fieldErrors.previousRoles && (
+                  <p className="mt-2 text-[11px] font-medium text-rose-600 dark:text-rose-400">{fieldErrors.previousRoles}</p>
+                )}
+                {rolesMissingServiceYears.length > 0 && (
+                  <p className="mt-2 text-[11px] font-medium text-rose-600 dark:text-rose-400">
+                    Select at least one year for: {rolesMissingServiceYears.join(", ")}.
+                  </p>
+                )}
+                {sortedServiceYears.length > 1 && !hasContinuousServiceYears && (
+                  <p className="mt-2 text-[11px] font-medium text-rose-600 dark:text-rose-400">
+                    The nominee's combined service years must be consecutive without a break.
+                  </p>
+                )}
+                {targetPosition === "President" && officeBearerServiceYears.length === 0 && (
+                  <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs font-medium text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400">
+                    <AlertCircle size={13} className="flex-shrink-0" />
+                    <span>President nominees require at least one Office Bearer service year.</span>
+                  </div>
+                )}
               </div>
+
             </div>
 
             {/* Section 4: Seconder Details */}
@@ -2678,8 +3635,8 @@ const ApplyScreen = ({ userProfile, onNominationSuccess }: any) => {
 
             <button
               type="submit"
-              disabled={isSubmitting || hasParticipantConflict || !hasEndorsementDeclaration || targetPositions.length === 0 || !nomineePhoto}
-              className={`w-full py-2.5 rounded-lg font-medium text-xs transition-colors shadow-xs ${!isSubmitting && !hasParticipantConflict && hasEndorsementDeclaration && targetPositions.length > 0 && !!nomineePhoto
+              disabled={isSubmitting || hasParticipantConflict || !hasEndorsementDeclaration || !targetPosition || !nomineePhoto || !hasValidRoleExperience}
+              className={`w-full py-2.5 rounded-lg font-medium text-xs transition-colors shadow-xs ${!isSubmitting && !hasParticipantConflict && hasEndorsementDeclaration && !!targetPosition && !!nomineePhoto && hasValidRoleExperience
                   ? 'bg-purple-600 hover:bg-purple-700 text-white'
                   : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed shadow-none'
                 }`}
@@ -2926,8 +3883,8 @@ const ScrutinyCommitteeScreen = ({ token }: any) => {
                     {/* Qualifications & Proposer Box */}
                     <div className="p-3.5 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 space-y-2.5 text-xs">
                       <div className="flex flex-wrap items-center gap-4 text-slate-600 dark:text-slate-400">
-                        <span><strong>Service Category:</strong> {app.roleCategory || 'Office Bearer'}</span>
-                        <span><strong>Continuous Service:</strong> {app.continuousService?.years || 1}+ yrs (unbroken)</span>
+                        <span><strong>Previous Responsibilities:</strong> {app.previousRoles?.length ? app.previousRoles.join(', ') : (app.roleCategory || 'Not recorded')}</span>
+                        <span><strong>Service Years:</strong> {app.continuousService?.serviceYears?.length ? app.continuousService.serviceYears.join(', ') : `${app.continuousService?.years || 1} year(s)`}</span>
                       </div>
 
                       {/* Explicit Proposer & Seconder Distinction */}
@@ -3207,7 +4164,7 @@ const ScrutinyCommitteeScreen = ({ token }: any) => {
 
 // === Phase 5a: My Nominations & Candidate Withdrawal Option ===
 
-const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
+const MyApplicationsScreen = ({ userProfile, onProceedToApply, isAdmin, publicationSettings, onTogglePublish, onNavigate }: any) => {
   const [applications, setApplications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [withdrawTarget, setWithdrawTarget] = useState<any>(null);
@@ -3216,13 +4173,40 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
   const [nominationView, setNominationView] = useState<'proposed_by_me' | 'nominated_me' | 'seconded_by_me'>('proposed_by_me');
   const [isProcessingConsent, setIsProcessingConsent] = useState<string | null>(null);
 
+  const isApplicationInSelectedView = (application: any) => {
+    // Both nominee consent and seconder consent must be accepted
+    if (application.seconderConsentStatus !== 'accepted' || application.nomineeConsentStatus !== 'accepted') {
+      return false;
+    }
+    // Pre-consent and declined proposals must not be included
+    if (['pending_seconding', 'seconding_declined', 'pending_nominee_consent', 'nominee_declined'].includes(application.status)) {
+      return false;
+    }
+
+    const currentEmail = String(userProfile?.email || '').trim().toLowerCase();
+    if (!currentEmail) return false;
+    const matches = (...values: unknown[]) => values.some(
+      value => String(value || '').trim().toLowerCase() === currentEmail
+    );
+
+    if (nominationView === 'proposed_by_me') {
+      return matches(application.proposerEmail, application.proposer?.email);
+    }
+    if (nominationView === 'nominated_me') {
+      return matches(application.nomineeEmail, application.applicantEmail, application.nominee?.email);
+    }
+    return matches(application.seconderEmail, application.seconder?.email);
+  };
+
   const fetchMyApplications = () => {
     if (userProfile?.email) {
       setLoading(true);
-      fetch(`http://localhost:5000/api/applications?email=${encodeURIComponent(userProfile.email)}&roleType=${nominationView}`)
+      fetch(`http://localhost:5000/api/applications?email=${encodeURIComponent(userProfile.email)}&roleType=${nominationView}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('ems_token') || ''}` }
+        })
         .then(res => res.json())
         .then(data => {
-          setApplications(Array.isArray(data) ? data : []);
+          setApplications(Array.isArray(data) ? data.filter(isApplicationInSelectedView) : []);
           setLoading(false);
         })
         .catch(err => {
@@ -3243,7 +4227,10 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
     try {
       const res = await fetch('http://localhost:5000/api/nominations/seconding-consent', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('ems_token') || ''}`
+        },
         body: JSON.stringify({ applicationId, decision })
       });
       if (res.ok) {
@@ -3265,7 +4252,10 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
     try {
       const res = await fetch('http://localhost:5000/api/nominations/nominee-consent', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('ems_token') || ''}`
+        },
         body: JSON.stringify({ applicationId, decision })
       });
       if (res.ok) {
@@ -3288,15 +4278,19 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
     try {
       const res = await fetch(`http://localhost:5000/api/applications/${withdrawTarget._id}/withdraw`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('ems_token') || ''}`
+        },
         body: JSON.stringify({ withdrawalReason })
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setWithdrawTarget(null);
         setWithdrawalReason('');
         fetchMyApplications();
       } else {
-        alert("Failed to process withdrawal");
+        alert(data.error || "Failed to process withdrawal");
       }
     } catch (err) {
       console.error(err);
@@ -3306,12 +4300,36 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
     }
   };
 
+  // If alumni and module is unpublished, display clean pending screen
+  if (!isAdmin && publicationSettings && !publicationSettings.applications) {
+    return (
+      <AlumniUnpublishedNotice
+        icon={FolderOpen}
+        badge="Status • Records Under Scrutiny"
+        title="Nominations Tracking Unpublished"
+        description="Nomination tracking and proposal consent records are currently hidden by the Election Commission."
+        actionLabel="Return to Dashboard"
+        onAction={() => onNavigate && onNavigate('dashboard')}
+      />
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className="space-y-6 relative z-10 pb-16 max-w-4xl mx-auto"
     >
+      {/* Admin Publication Control Banner */}
+      {isAdmin && publicationSettings && (
+        <AdminPublicationBanner
+          moduleKey="applications"
+          title="My Nominations Status Tracker"
+          isPublished={publicationSettings.applications}
+          onToggle={onTogglePublish}
+        />
+      )}
+
       <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-6 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-900 dark:text-white">My Nominations</h2>
@@ -3319,12 +4337,14 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
             Track candidate proposals, nominations, and seconding requests.
           </p>
         </div>
-        <button
-          onClick={onProceedToApply}
-          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium text-xs rounded-lg transition-colors shadow-xs flex items-center gap-1.5 self-start sm:self-auto"
-        >
-          <UserPlus size={14} /> Propose Candidate
-        </button>
+        {(isAdmin || publicationSettings?.apply) && (
+          <button
+            onClick={onProceedToApply}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium text-xs rounded-lg transition-colors shadow-xs flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            <UserPlus size={14} /> Propose Candidate
+          </button>
+        )}
       </div>
 
       {/* Toggle View: Proposed by Me vs Where I am Nominated vs Seconding Requests */}
@@ -3354,7 +4374,7 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
               : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60'
             }`}
         >
-          <ShieldCheck size={13} /> Seconding Requests & Consents
+          <ShieldCheck size={13} /> Nominations I Seconded
         </button>
       </div>
 
@@ -3369,28 +4389,25 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
           </div>
           <p className="text-slate-700 dark:text-slate-300 font-semibold text-sm">
             {nominationView === 'proposed_by_me'
-              ? "You haven't proposed any candidates yet."
+              ? "You haven't proposed any confirmed candidates yet."
               : nominationView === 'nominated_me'
-                ? "No nominations proposing you have been filed yet."
-                : "No seconding requests have been sent to you."}
+                ? "No confirmed candidate nominations where you are nominated."
+                : "No confirmed nominations seconded by you."}
           </p>
           <p className="text-xs text-slate-500 mt-1 max-w-sm">
             {nominationView === 'proposed_by_me'
-              ? "Click 'Propose Candidate' to submit an eligible member's nomination."
+              ? "Candidates proposed by you will appear here once both the seconder and nominee have accepted."
               : nominationView === 'nominated_me'
-                ? "When an eligible alumni member proposes you, the nomination record will appear here."
-                : "When an alumni member designates you as a seconder, the request will appear here for your consent."}
+                ? "Nominations proposing you will appear here once both seconder consent and your candidate consent are accepted."
+                : "Nominations you have seconded will appear here once both consents are accepted."}
           </p>
         </div>
       ) : (
         <div className="space-y-4">
           {applications.map((app: any) => {
-            const isPendingSeconding = app.status === 'pending_seconding' || (app.seconderConsentStatus === 'pending' && app.status === 'pending_seconding');
-            const isSecondingDeclined = app.status === 'seconding_declined' || (app.seconderConsentStatus === 'declined' && app.status === 'seconding_declined');
-            const isSecondingAccepted = app.seconderConsentStatus === 'accepted';
-            const isPendingNomineeConsent = app.status === 'pending_nominee_consent';
-            const isNomineeDeclined = app.status === 'nominee_declined';
-            const isNomineeAccepted = app.nomineeConsentStatus === 'accepted';
+            const currentEmail = String(userProfile?.email || '').trim().toLowerCase();
+            const isNominee = [app.nomineeEmail, app.applicantEmail, app.nominee?.email]
+              .some(e => String(e || '').trim().toLowerCase() === currentEmail);
 
             return (
               <div key={app._id} className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 sm:p-6 space-y-4 shadow-xs">
@@ -3425,19 +4442,12 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
                       ${app.status === 'approved' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' :
                         app.status === 'withdrawn' ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400' :
                           app.status === 'rejected' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800' :
-                            isPendingSeconding ? 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800' :
-                              isSecondingDeclined ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800' :
-                                isPendingNomineeConsent ? 'bg-purple-50 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800' :
-                                  isNomineeDeclined ? 'bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800' :
-                                    'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800'}`}
+                            'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800'}`}
                     >
                       {app.status === 'approved' ? '✓ Scrutiny Passed' :
-                        isPendingSeconding ? '⏳ Seconder Pending' :
-                          isSecondingDeclined ? '✕ Seconding Declined' :
-                            isPendingNomineeConsent ? '⏳ Nominee Consent Pending' :
-                              isNomineeDeclined ? '✕ Nominee Declined' :
-                                isNomineeAccepted && app.status === 'pending' ? '✓ In Scrutiny' :
-                                  app.status}
+                        app.status === 'rejected' ? '✕ Scrutiny Rejected' :
+                          app.status === 'withdrawn' ? 'Withdrawn' :
+                            '✓ In Scrutiny'}
                     </span>
                   </div>
                 </div>
@@ -3456,128 +4466,15 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
                   </div>
                 </div>
 
-                {/* Nominee In-App Action Callout */}
-                {nominationView === 'nominated_me' && isPendingNomineeConsent && (
-                  <div className="p-4 rounded-xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 space-y-2.5">
-                    <div className="flex items-start gap-2 text-xs text-purple-900 dark:text-purple-200 font-medium">
-                      <AlertCircle size={16} className="text-purple-600 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-bold">Your Consent is Required to Stand as Candidate:</p>
-                        <p className="text-[11px] text-purple-800 dark:text-purple-300 mt-0.5">
-                          You have been proposed and seconded. The nomination will be submitted for scrutiny once you confirm your willingness.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800 rounded-lg p-3 text-xs space-y-1 border border-purple-100 dark:border-purple-900/40">
-                      <p><span className="text-slate-500">Position:</span> <span className="font-semibold text-purple-700 dark:text-purple-300">{app.targetPositions?.join(', ')}</span></p>
-                      <p><span className="text-slate-500">Proposed By:</span> <span className="font-semibold">{app.proposer?.name}</span> ({app.proposer?.email || app.proposerEmail})</p>
-                      <p><span className="text-slate-500">Seconded By:</span> <span className="font-semibold">{app.seconder?.name}</span> ({app.seconder?.email || app.seconderEmail}) <span className="text-emerald-600 font-semibold ml-1">✓ Consented</span></p>
-                    </div>
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        disabled={isProcessingConsent === app._id}
-                        onClick={() => handleNomineeConsent(app._id, 'accept')}
-                        className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-medium transition-colors shadow-xs"
-                      >
-                        ✓ Accept Nomination
-                      </button>
-                      <button
-                        disabled={isProcessingConsent === app._id}
-                        onClick={() => handleNomineeConsent(app._id, 'decline')}
-                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition-colors border border-slate-200 dark:border-slate-700"
-                      >
-                        ✕ Decline
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {nominationView === 'nominated_me' && isNomineeAccepted && (
-                  <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg text-xs text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-emerald-600" />
-                    <span>You have accepted this nomination. It has been formally submitted to the Election Scrutiny Committee.</span>
-                  </div>
-                )}
-
-                {nominationView === 'nominated_me' && isNomineeDeclined && (
-                  <div className="p-2.5 bg-rose-50 dark:bg-rose-950/20 rounded-lg text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center gap-2">
-                    <XCircle size={15} className="text-rose-600" />
-                    <span>You declined this nomination. The proposal was not submitted per election bylaws.</span>
-                  </div>
-                )}
-
-                {/* Seconder In-App Action Callout */}
-                {nominationView === 'seconded_by_me' && isPendingSeconding && (
-                  <div className="p-4 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 space-y-2.5">
-                    <div className="flex items-start gap-2 text-xs text-amber-900 dark:text-amber-200 font-medium">
-                      <AlertCircle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-bold">Your Consent as Seconding Member is Required:</p>
-                        <p className="text-[11px] text-amber-800 dark:text-amber-300 mt-0.5">
-                          Under association election bylaws, this nomination proposal will only be submitted to the Scrutiny Committee once you confirm your willingness to second it.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        disabled={isProcessingConsent === app._id}
-                        onClick={() => handleSecondingConsent(app._id, 'accept')}
-                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium transition-colors shadow-xs"
-                      >
-                        ✓ Accept & Second Nomination
-                      </button>
-                      <button
-                        disabled={isProcessingConsent === app._id}
-                        onClick={() => handleSecondingConsent(app._id, 'decline')}
-                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition-colors border border-slate-200 dark:border-slate-700"
-                      >
-                        ✕ Decline
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {nominationView === 'seconded_by_me' && isSecondingAccepted && (
-                  <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg text-xs text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-2">
-                    <CheckCircle2 size={15} className="text-emerald-600" />
-                    <span>You accepted and seconded this nomination. {isPendingNomineeConsent ? 'Awaiting the nominee\'s consent before submission.' : isNomineeAccepted ? 'The nominee also accepted — submitted to Scrutiny Committee.' : ''}</span>
-                  </div>
-                )}
-
-                {nominationView === 'seconded_by_me' && isSecondingDeclined && (
-                  <div className="p-2.5 bg-rose-50 dark:bg-rose-950/20 rounded-lg text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center gap-2">
-                    <XCircle size={15} className="text-rose-600" />
-                    <span>You declined to second this nomination. In accordance with bylaws, the proposal was not submitted.</span>
-                  </div>
-                )}
-
-                {/* Proposer Status Notice */}
-                {nominationView === 'proposed_by_me' && isPendingSeconding && (
-                  <div className="p-2.5 bg-amber-50 dark:bg-amber-950/20 rounded-lg text-xs text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-2">
-                    <Clock size={15} className="text-amber-600 flex-shrink-0" />
-                    <span>
-                      Awaiting seconding consent from <strong>{app.seconder?.name}</strong> ({app.seconder?.email || app.seconderEmail}).
-                    </span>
-                  </div>
-                )}
-
-                {nominationView === 'proposed_by_me' && isPendingNomineeConsent && (
-                  <div className="p-2.5 bg-purple-50 dark:bg-purple-950/20 rounded-lg text-xs text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center gap-2">
-                    <Clock size={15} className="text-purple-600 flex-shrink-0" />
-                    <span>
-                      Seconding confirmed by <strong>{app.seconder?.name}</strong>. Now awaiting <strong>{app.nominee?.name || app.name}</strong>'s consent.
-                    </span>
-                  </div>
-                )}
-
-                {nominationView === 'proposed_by_me' && isSecondingDeclined && (
-                  <div className="p-2.5 bg-rose-50 dark:bg-rose-950/20 rounded-lg text-xs text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-center gap-2">
-                    <XCircle size={15} className="text-rose-600 flex-shrink-0" />
-                    <span>
-                      The designated seconder (<strong>{app.seconder?.name}</strong>) declined to second this nomination.
-                    </span>
-                  </div>
-                )}
+                {/* Both Consents Confirmed Badge */}
+                <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+                    <CheckCircle2 size={12} className="text-emerald-600 dark:text-emerald-400" /> Seconder Consent: Accepted
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+                    <CheckCircle2 size={12} className="text-emerald-600 dark:text-emerald-400" /> Candidate Consent: Accepted
+                  </span>
+                </div>
 
                 {app.purposeStatement && (
                   <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg text-xs text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-800">
@@ -3594,17 +4491,23 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
                 )}
 
                 {/* Withdrawal Option Section */}
-                {app.status !== 'withdrawn' && app.status !== 'rejected' && app.status !== 'pending_seconding' && app.status !== 'seconding_declined' && app.status !== 'pending_nominee_consent' && app.status !== 'nominee_declined' && (
+                {app.status !== 'withdrawn' && app.status !== 'rejected' && (
                   <div className="pt-2 flex flex-col sm:flex-row justify-between sm:items-center gap-2.5 border-t border-slate-100 dark:border-slate-800">
                     <span className="text-xs text-slate-500">
                       Candidate withdrawal window is open until <strong>October 14, 2026</strong>.
                     </span>
-                    <button
-                      onClick={() => setWithdrawTarget(app)}
-                      className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 text-xs font-medium rounded-lg border border-rose-200 dark:border-rose-800 transition-colors flex items-center gap-1.5 w-fit"
-                    >
-                      <Undo2 size={13} /> Withdraw Nomination
-                    </button>
+                    {(isNominee || isAdmin) ? (
+                      <button
+                        onClick={() => setWithdrawTarget(app)}
+                        className="px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 text-xs font-medium rounded-lg border border-rose-200 dark:border-rose-800 transition-colors flex items-center gap-1.5 w-fit"
+                      >
+                        <Undo2 size={13} /> Withdraw Nomination
+                      </button>
+                    ) : (
+                      <span className="text-xs text-slate-500 dark:text-slate-400 italic bg-slate-50 dark:bg-slate-800/60 px-3 py-1.5 rounded-lg border border-slate-200/60 dark:border-slate-800 flex items-center gap-1.5">
+                        <Lock size={12} className="text-slate-400" /> Only candidate ({app.name}) can withdraw
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -3681,19 +4584,28 @@ const MyApplicationsScreen = ({ userProfile, onProceedToApply }: any) => {
 
 // === Phase 5b: Official Publication of Final List Screen ===
 
-const FinalCandidateListScreen = ({ isAdmin, token }: { isAdmin: boolean; token: string }) => {
+const FinalCandidateListScreen = ({ isAdmin, token, publicationSettings, onTogglePublish }: any) => {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [positionFilter, setPositionFilter] = useState('All');
   const [loading, setLoading] = useState(true);
-  const [isPublished, setIsPublished] = useState(false);
+  const [isPublished, setIsPublished] = useState(publicationSettings?.finalList || false);
   const [publishing, setPublishing] = useState(false);
   const [notifying, setNotifying] = useState(false);
   const [publishSuccess, setPublishSuccess] = useState(false);
   const [notifySuccess, setNotifySuccess] = useState(false);
+  const [showNotifyModal, setShowNotifyModal] = useState(false);
+
+  useEffect(() => {
+    if (publicationSettings?.finalList !== undefined) {
+      setIsPublished(publicationSettings.finalList);
+    }
+  }, [publicationSettings?.finalList]);
 
   const fetchFinalList = () => {
     setLoading(true);
-    fetch(`http://localhost:5000/api/elections/final-list?position=${encodeURIComponent(positionFilter)}`)
+    fetch(`http://localhost:5000/api/elections/final-list?position=${encodeURIComponent(positionFilter)}`, {
+      headers: { 'Authorization': `Bearer ${token || localStorage.getItem('ems_token') || ''}` }
+    })
       .then(res => res.json())
       .then(data => {
         setCandidates(data.candidates || []);
@@ -3721,6 +4633,7 @@ const FinalCandidateListScreen = ({ isAdmin, token }: { isAdmin: boolean; token:
       const data = await res.json();
       if (res.ok && data.success) {
         setIsPublished(true);
+        if (onTogglePublish) onTogglePublish('finalList', true);
         setPublishSuccess(true);
         setTimeout(() => setPublishSuccess(false), 5000);
       } else {
@@ -3734,8 +4647,7 @@ const FinalCandidateListScreen = ({ isAdmin, token }: { isAdmin: boolean; token:
     }
   };
 
-  const handleNotifyAlumni = async () => {
-    if (!window.confirm("Are you sure you want to notify all alumni?")) return;
+  const handleSendNotification = async (targetMode: 'all' | 'single', recipientEmail: string) => {
     setNotifying(true);
     try {
       const res = await fetch('http://localhost:5000/api/elections/notify-final-list', {
@@ -3744,18 +4656,25 @@ const FinalCandidateListScreen = ({ isAdmin, token }: { isAdmin: boolean; token:
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ electionYear: '2026', appUrl: window.location.origin })
+        body: JSON.stringify({
+          electionYear: '2026',
+          appUrl: window.location.origin,
+          targetMode,
+          recipientEmail
+        })
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        setShowNotifyModal(false);
         setNotifySuccess(true);
         setTimeout(() => setNotifySuccess(false), 5000);
+        alert(`✅ ${data.message}`);
       } else {
-        alert("Failed to notify alumni: " + (data.error || "Unknown error"));
+        alert("Failed to notify: " + (data.error || "Unknown error"));
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("An error occurred while sending notifications.");
+      alert("An error occurred while sending notifications: " + err.message);
     } finally {
       setNotifying(false);
     }
@@ -3769,7 +4688,10 @@ const FinalCandidateListScreen = ({ isAdmin, token }: { isAdmin: boolean; token:
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
-      if (res.ok) setIsPublished(false);
+      if (res.ok) {
+        setIsPublished(false);
+        if (onTogglePublish) onTogglePublish('finalList', false);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -3817,9 +4739,10 @@ const FinalCandidateListScreen = ({ isAdmin, token }: { isAdmin: boolean; token:
                 {publishing ? <><Loader2 size={13} className="animate-spin" /> Publishing...</> : <><Globe size={13} /> Publish Final List</>}
               </button>
               <button
-                onClick={handleNotifyAlumni}
+                onClick={() => setShowNotifyModal(true)}
                 disabled={notifying}
                 className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium text-xs rounded-lg border border-slate-200 dark:border-slate-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                title="Send notification to all alumni or a single person"
               >
                 {notifying ? <><Loader2 size={13} className="animate-spin" /> Notifying...</> : <><Send size={13} /> Notify Alumni</>}
               </button>
@@ -3835,9 +4758,10 @@ const FinalCandidateListScreen = ({ isAdmin, token }: { isAdmin: boolean; token:
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={handleNotifyAlumni}
+                onClick={() => setShowNotifyModal(true)}
                 disabled={notifying}
                 className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-medium text-xs rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-xs"
+                title="Send notification to all alumni or a single person"
               >
                 {notifying ? <><Loader2 size={13} className="animate-spin" /> Notifying...</> : <><Send size={13} /> Notify Alumni</>}
               </button>
@@ -3956,11 +4880,11 @@ const FinalCandidateListScreen = ({ isAdmin, token }: { isAdmin: boolean; token:
                     <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg text-xs space-y-1.5 border border-slate-100 dark:border-slate-800">
                       <div className="flex justify-between">
                         <span className="text-slate-500">Responsibility:</span>
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">{cand.roleCategory}</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200 text-right">{cand.previousRoles?.length ? cand.previousRoles.join(', ') : cand.roleCategory}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500">Service Tenure:</span>
-                        <span className="font-semibold text-slate-800 dark:text-slate-200">{cand.continuousService?.years || 1}+ Years</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">{cand.continuousService?.serviceYears?.length ? cand.continuousService.serviceYears.join(', ') : `${cand.continuousService?.years || 1} year(s)`}</span>
                       </div>
                       {cand.proposer?.name && (
                         <div className="flex justify-between pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
@@ -3988,13 +4912,37 @@ const FinalCandidateListScreen = ({ isAdmin, token }: { isAdmin: boolean; token:
           ))}
         </div>
       )}
+
+      {/* Reusable Notify Alumni Modal (All or Single Person) */}
+      {isAdmin && (
+        <NotifyAlumniModal
+          isOpen={showNotifyModal}
+          onClose={() => setShowNotifyModal(false)}
+          title="Notify Alumni — Final Candidate Roll"
+          subtitle="Dispatch official certified candidate roll announcement."
+          badge="Certified Roll"
+          onSend={handleSendNotification}
+          isLoading={notifying}
+        />
+      )}
     </motion.div>
   );
 };
 
 // === Dashboard Screen ===
 
-const DashboardScreen = ({ onNavigate, isAdmin, userProfile, token }: any) => {
+const DashboardScreen = ({
+  onNavigate,
+  isAdmin,
+  userProfile,
+  token,
+  publicationSettings,
+  onTogglePublish,
+  onPublishAll,
+  onUnpublishAll,
+  onOpenPubModal,
+  loadingPubModule
+}: any) => {
   const [stats, setStats] = useState({
     total: 0,
     approved: 0,
@@ -4015,6 +4963,15 @@ const DashboardScreen = ({ onNavigate, isAdmin, userProfile, token }: any) => {
         .catch(err => console.error("Failed to fetch stats from backend", err));
     }
   }, [isAdmin, token]);
+
+  const alumniCards = [
+    { key: 'announcements', tab: 'announcements', title: 'Official Announcements', desc: 'Read certified election gazette notices and schedules.', icon: Megaphone },
+    { key: 'eligibility', tab: 'eligibility', title: 'Eligibility Criteria', desc: 'Review official qualification and voting requirements.', icon: ClipboardCheck },
+    { key: 'apply', tab: 'apply', title: 'Propose a Candidate', desc: 'Submit a nomination proposal and assign an eligible seconder.', icon: UserPlus },
+    { key: 'applications', tab: 'applications', title: 'My Nominations', desc: 'Track your proposals, candidate consents, and seconding requests.', icon: FolderOpen },
+    { key: 'finalList', tab: 'finalList', title: 'Final Candidate Roll', desc: 'View the certified list of eligible candidates.', icon: Award },
+    { key: 'voting', tab: 'voting', title: 'Cast Vote & Ballot', desc: 'Access confidential digital voting booth when ballot opens.', icon: Vote }
+  ];
 
   return (
     <div className="space-y-6 relative z-10">
@@ -4059,12 +5016,14 @@ const DashboardScreen = ({ onNavigate, isAdmin, userProfile, token }: any) => {
                 Access election notices, verify eligibility, propose nominees, and view certified candidate rolls.
               </p>
             </div>
-            <button
-              onClick={() => onNavigate('announcements')}
-              className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-xs w-fit"
-            >
-              <Megaphone size={14} /> Announcements
-            </button>
+            {publicationSettings?.announcements && (
+              <button
+                onClick={() => onNavigate('announcements')}
+                className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 shadow-xs w-fit"
+              >
+                <Megaphone size={14} /> Announcements
+              </button>
+            )}
           </div>
         )}
       </motion.div>
@@ -4096,6 +5055,111 @@ const DashboardScreen = ({ onNavigate, isAdmin, userProfile, token }: any) => {
               </div>
             </motion.div>
           ))}
+        </div>
+      )}
+
+      {/* Admin Central Alumni Publication Hub */}
+      {isAdmin && publicationSettings && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center flex-shrink-0">
+                <Globe size={18} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                    Alumni Publication Control Hub
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                    {Object.values(publicationSettings).filter(Boolean).length}/7 Published
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Publish or unpublish any module to alumni with 1-click or manage them collectively.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={onPublishAll}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+                title="Publish all 7 modules live to alumni"
+              >
+                <CheckCircle2 size={13} />
+                <span>Publish Everything</span>
+              </button>
+              <button
+                onClick={onUnpublishAll}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+                title="Unpublish all modules from alumni (draft mode)"
+              >
+                <EyeOff size={13} />
+                <span>Unpublish Everything</span>
+              </button>
+              {onOpenPubModal && (
+                <button
+                  onClick={onOpenPubModal}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+                >
+                  <Edit3 size={13} />
+                  <span>Detailed View</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Quick toggle chips for each module */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+            {PUBLICATION_MODULES.map((m) => {
+              const isLive = !!(publicationSettings as any)[m.key];
+              const MIcon = m.icon;
+              const isLoading = loadingPubModule === m.key;
+              return (
+                <div
+                  key={m.key}
+                  className={`p-3 rounded-xl border flex items-center justify-between gap-2.5 transition-all ${
+                    isLive
+                      ? 'bg-emerald-50/40 dark:bg-emerald-950/15 border-emerald-200 dark:border-emerald-800/60'
+                      : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-xs ${
+                        isLive
+                          ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-300'
+                          : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                      }`}
+                    >
+                      <MIcon size={14} />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="font-semibold text-xs text-slate-900 dark:text-white truncate block">
+                        {m.shortLabel}
+                      </span>
+                      <span className={`text-[10px] font-medium block ${
+                        isLive ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
+                      }`}>
+                        {isLive ? '● Live' : '○ Draft'}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onTogglePublish(m.key, !isLive)}
+                    disabled={isLoading}
+                    className={`px-2 py-1 rounded text-[11px] font-semibold flex items-center gap-1 transition-colors ${
+                      isLive
+                        ? 'bg-white dark:bg-slate-800 text-amber-700 dark:text-amber-300 hover:bg-amber-50 border border-amber-200 dark:border-amber-700'
+                        : 'bg-purple-600 hover:bg-purple-700 text-white'
+                    }`}
+                  >
+                    {isLoading ? <Loader2 size={10} className="animate-spin" /> : isLive ? 'Unpublish' : 'Publish'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -4143,70 +5207,39 @@ const DashboardScreen = ({ onNavigate, isAdmin, userProfile, token }: any) => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div
-            onClick={() => onNavigate('announcements')}
-            className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 cursor-pointer hover:border-purple-300 dark:hover:border-purple-800 hover:shadow-xs transition-all group"
-          >
-            <div className="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-3">
-              <Megaphone size={20} />
-            </div>
-            <h3 className="font-semibold text-sm text-slate-900 dark:text-white mb-1">Official Announcements</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              Read certified election gazette notices and schedules.
-            </p>
-          </div>
-
-          <div
-            onClick={() => onNavigate('eligibility')}
-            className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 cursor-pointer hover:border-purple-300 dark:hover:border-purple-800 hover:shadow-xs transition-all group"
-          >
-            <div className="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-3">
-              <ClipboardCheck size={20} />
-            </div>
-            <h3 className="font-semibold text-sm text-slate-900 dark:text-white mb-1">Eligibility Evaluator</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              Verify nominee eligibility criteria before proposing.
-            </p>
-          </div>
-
-          <div
-            onClick={() => onNavigate('apply')}
-            className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 cursor-pointer hover:border-purple-300 dark:hover:border-purple-800 hover:shadow-xs transition-all group"
-          >
-            <div className="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-3">
-              <UserPlus size={20} />
-            </div>
-            <h3 className="font-semibold text-sm text-slate-900 dark:text-white mb-1">Propose a Candidate</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              Submit a nomination proposal and assign an eligible seconder.
-            </p>
-          </div>
-
-          <div
-            onClick={() => onNavigate('applications')}
-            className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 cursor-pointer hover:border-purple-300 dark:hover:border-purple-800 hover:shadow-xs transition-all group"
-          >
-            <div className="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-3">
-              <FolderOpen size={20} />
-            </div>
-            <h3 className="font-semibold text-sm text-slate-900 dark:text-white mb-1">My Nominations</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              Track your proposals, candidate consents, and seconding requests.
-            </p>
-          </div>
-
-          <div
-            onClick={() => onNavigate('finalList')}
-            className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 cursor-pointer hover:border-purple-300 dark:hover:border-purple-800 hover:shadow-xs transition-all group"
-          >
-            <div className="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-3">
-              <Award size={20} />
-            </div>
-            <h3 className="font-semibold text-sm text-slate-900 dark:text-white mb-1">Final Candidate Roll</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-              View the certified list of eligible candidates.
-            </p>
-          </div>
+          {alumniCards.filter((card) => publicationSettings?.[card.key]).map((card) => {
+            const isLive = publicationSettings ? !!publicationSettings[card.key] : true;
+            const CardIcon = card.icon;
+            return (
+              <div
+                key={card.key}
+                onClick={() => onNavigate(card.tab)}
+                className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-5 cursor-pointer hover:border-purple-300 dark:hover:border-purple-800 hover:shadow-xs transition-all group flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-10 h-10 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                      <CardIcon size={20} />
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border flex items-center gap-1 ${
+                        isLive
+                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                          : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                      }`}
+                    >
+                      {isLive ? <CheckCircle2 size={10} /> : <Clock size={10} />}
+                      {isLive ? 'Live & Open' : 'Pending Release'}
+                    </span>
+                  </div>
+                  <h3 className="font-semibold text-sm text-slate-900 dark:text-white mb-1">{card.title}</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                    {card.desc}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -4215,7 +5248,7 @@ const DashboardScreen = ({ onNavigate, isAdmin, userProfile, token }: any) => {
 
 // === EC Screen ===
 
-const ECScreen = ({ onNavigate }: any) => {
+const ECScreen = ({ onNavigate, isAdmin, publicationSettings, onTogglePublish }: any) => {
   const [announcement, setAnnouncement] = useState<any>(null);
 
   useEffect(() => {
@@ -4241,6 +5274,16 @@ const ECScreen = ({ onNavigate }: any) => {
       initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
       className="space-y-6 relative z-10 pb-20"
     >
+      {/* Admin Publication Control Banner */}
+      {isAdmin && publicationSettings && (
+        <AdminPublicationBanner
+          moduleKey="timelines"
+          title="Election Timelines & Milestones"
+          isPublished={publicationSettings.timelines}
+          onToggle={onTogglePublish}
+        />
+      )}
+
       <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 md:p-8 shadow-xs">
         <h2 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white">Executive Committee Panel</h2>
         <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">
@@ -4340,7 +5383,7 @@ const AuthContainer = ({ children, title, subtitle }: any) => (
 // ============================================================
 // VOTING SCREEN — Admin Control Panel + Alumni Ballot
 // ============================================================
-const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
+const VotingScreen = ({ isAdmin, token, userProfile, publicationSettings, onTogglePublish }: any) => {
   const [votingStatus, setVotingStatus] = useState<string>('not_started');
   const [announcement, setAnnouncement] = useState<any>(null);
   const [ballot, setBallot] = useState<any[]>([]);
@@ -4350,6 +5393,20 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [castingPosition, setCastingPosition] = useState<string | null>(null);
   const [statusInfo, setStatusInfo] = useState<any>(null);
+  const [selectedPosition, setSelectedPosition] = useState<string>('');
+  const [notifyModalConfig, setNotifyModalConfig] = useState<{
+    open: boolean;
+    type: 'live' | 'reminder_2day' | 'reminder_1day';
+    title: string;
+    subtitle: string;
+    badge: string;
+  }>({
+    open: false,
+    type: 'live',
+    title: 'Notify Alumni — Voting Has Started',
+    subtitle: 'Broadcast ballot link and candidate details to alumni.',
+    badge: 'Voting Starts'
+  });
   const API = 'http://localhost:5000/api';
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
@@ -4380,6 +5437,20 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  useEffect(() => {
+    if (ballot.length === 0) return;
+
+    setSelectedPosition(currentPosition => {
+      if (currentPosition && ballot.some(group => group.position === currentPosition)) {
+        return currentPosition;
+      }
+
+      const votedRoles = myVotes.votedPositions || [];
+      const firstIncompleteRole = ballot.find(group => !votedRoles.includes(group.position));
+      return (firstIncompleteRole || ballot[0]).position;
+    });
+  }, [ballot, myVotes.votedPositions]);
+
   const openVoting = async () => {
     if (!confirm('Open voting? This will enable live ballots for alumni to cast their votes. Continue?')) return;
     setActionLoading('open');
@@ -4391,23 +5462,78 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      alert(`✅ ${data.message}\n\nYou can broadcast announcement emails to alumni anytime using the "Notify Alumni" button.`);
+      if (onTogglePublish) onTogglePublish('voting', true);
+      alert(`✅ ${data.message}\n\nYou can broadcast announcement emails to alumni anytime using the "Send Voting Starts Notice" button.`);
       fetchAll();
     } catch (err: any) { alert('❌ ' + err.message); }
     finally { setActionLoading(null); }
   };
 
-  const notifyAlumni = async () => {
-    if (!confirm('Broadcast "Voting is Live" announcement email to ALL registered alumni members? Continue?')) return;
-    setActionLoading('notify');
+  // 1st Button: 2-Day Reminder (Day After Tomorrow is Voting Day)
+  const open2DayReminderModal = () => {
+    setNotifyModalConfig({
+      open: true,
+      type: 'reminder_2day',
+      title: 'Send 2-Day Notice (Day After Tomorrow is Voting Day)',
+      subtitle: 'Send official reminder to alumni that voting will take place the day after tomorrow.',
+      badge: '2-Day Notice • Day After Tomorrow'
+    });
+  };
+
+  // 2nd Button: 1-Day Reminder (Day Before Voting Day / Tomorrow)
+  const open1DayReminderModal = () => {
+    setNotifyModalConfig({
+      open: true,
+      type: 'reminder_1day',
+      title: 'Send 1-Day Notice (Day Before Voting Day / Tomorrow)',
+      subtitle: 'Urgent election eve notification alerting alumni that voting opens tomorrow.',
+      badge: '1-Day Notice • Voting Tomorrow'
+    });
+  };
+
+  // 3rd Button: When Voting Starts
+  const openVotingLiveModal = () => {
+    setNotifyModalConfig({
+      open: true,
+      type: 'live',
+      title: 'Notify Alumni — Voting Has Started',
+      subtitle: 'Broadcast official notification that voting has commenced and the digital ballot is live.',
+      badge: 'Voting Commenced • Ballot Live'
+    });
+  };
+
+  const handleSendVotingNotification = async (targetMode: 'all' | 'single', recipientEmail: string) => {
+    let endpoint = `${API}/elections/voting/notify-alumni`;
+    let loadingKey = 'notify_live';
+
+    if (notifyModalConfig.type === 'reminder_2day') {
+      endpoint = `${API}/elections/voting/send-2day-reminder`;
+      loadingKey = 'reminder_2day';
+    } else if (notifyModalConfig.type === 'reminder_1day') {
+      endpoint = `${API}/elections/voting/send-1day-reminder`;
+      loadingKey = 'reminder_1day';
+    } else {
+      endpoint = `${API}/elections/voting/notify-alumni`;
+      loadingKey = 'notify_live';
+    }
+
+    setActionLoading(loadingKey);
     try {
-      const res = await fetch(`${API}/elections/voting/notify-alumni`, { method: 'POST', headers });
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ targetMode, recipientEmail })
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      setNotifyModalConfig(prev => ({ ...prev, open: false }));
       alert(`✅ ${data.message}`);
       fetchAll();
-    } catch (err: any) { alert('❌ ' + err.message); }
-    finally { setActionLoading(null); }
+    } catch (err: any) {
+      alert('❌ ' + err.message);
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const closeVoting = async () => {
@@ -4417,20 +5543,8 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
       const res = await fetch(`${API}/elections/voting/close`, { method: 'POST', headers });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      if (onTogglePublish) onTogglePublish('voting', false);
       alert('✅ ' + data.message);
-      fetchAll();
-    } catch (err: any) { alert('❌ ' + err.message); }
-    finally { setActionLoading(null); }
-  };
-
-  const sendReminder = async () => {
-    if (!confirm('Send 2-day election reminder email to ALL alumni members?')) return;
-    setActionLoading('reminder');
-    try {
-      const res = await fetch(`${API}/elections/voting/send-reminder`, { method: 'POST', headers });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      alert(`✅ ${data.message}`);
       fetchAll();
     } catch (err: any) { alert('❌ ' + err.message); }
     finally { setActionLoading(null); }
@@ -4467,6 +5581,11 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
     finally { setCastingPosition(null); }
   };
 
+  const votedPositions = myVotes.votedPositions || [];
+  const totalVoted = votedPositions.length;
+  const totalPositions = ballot.length || ELECTION_POSITIONS.length;
+  const selectedRole = ballot.find((group: any) => group.position === selectedPosition) || ballot[0];
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -4486,7 +5605,7 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
           </div>
           <h2 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white">Ballot Successfully Sealed</h2>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
-            You have cast your votes across all <strong>6 Executive Office Bearer positions</strong>.
+            You have cast your votes across all <strong>{totalPositions} Executive Office Bearer positions</strong>.
             Your ballot has been securely sealed and registered. A confirmation receipt has been dispatched to your registered alumni email address.
           </p>
           <div className="bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl p-4 border border-emerald-100 dark:border-emerald-900/30">
@@ -4509,6 +5628,16 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
   if (isAdmin) {
     return (
       <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 max-w-5xl mx-auto">
+        {/* Admin Publication Control Banner */}
+        {isAdmin && publicationSettings && (
+          <AdminPublicationBanner
+            moduleKey="voting"
+            title="Cast Vote & Digital Ballot Box"
+            isPublished={votingStatus === 'live' || !!publicationSettings?.voting}
+            onToggle={(key: string, nextStatus: boolean) => nextStatus ? openVoting() : closeVoting()}
+          />
+        )}
+
         <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 md:p-8 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white">
@@ -4549,18 +5678,39 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
                 <span>Close Voting</span>
               </button>
             )}
-            <button onClick={notifyAlumni} disabled={!!actionLoading || votingStatus !== 'live'}
-              title={votingStatus !== 'live' ? 'Open voting first before notifying alumni' : 'Broadcast "Voting is Live" announcement to all alumni'}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs rounded-lg shadow-xs transition-colors disabled:opacity-50 inline-flex items-center gap-2">
-              {actionLoading === 'notify' ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-              <span>Notify Alumni</span>
+            {/* 1st Button: 2-Day Reminder (Day After Tomorrow is Voting Day) */}
+            <button
+              onClick={open2DayReminderModal}
+              disabled={!!actionLoading}
+              title="Day after tomorrow is voting day: Send 2-day reminder to all alumni or a single person"
+              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs rounded-lg shadow-xs transition-colors disabled:opacity-50 inline-flex items-center gap-2"
+            >
+              {actionLoading === 'reminder_2day' ? <Loader2 size={13} className="animate-spin" /> : <CalendarDays size={13} />}
+              <span>Send 1st Reminder</span>
             </button>
-            <button onClick={sendReminder} disabled={!!actionLoading || votingStatus !== 'live'}
-              title={votingStatus !== 'live' ? 'Voting must be live to send reminder' : 'Send 2-day reminder email to all alumni'}
-              className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs rounded-lg shadow-xs transition-colors disabled:opacity-50 inline-flex items-center gap-2">
-              {actionLoading === 'reminder' ? <Loader2 size={13} className="animate-spin" /> : <Clock size={13} />}
-              <span>Send 2-Day Reminder</span>
+
+            {/* 2nd Button: 1-Day Reminder (Day Before Voting Day / Tomorrow) */}
+            <button
+              onClick={open1DayReminderModal}
+              disabled={!!actionLoading}
+              title="Day before voting day: Send 1-day eve reminder to all alumni or a single person"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg shadow-xs transition-colors disabled:opacity-50 inline-flex items-center gap-2"
+            >
+              {actionLoading === 'reminder_1day' ? <Loader2 size={13} className="animate-spin" /> : <Clock size={13} />}
+              <span>Send Last Reminder</span>
             </button>
+
+            {/* 3rd Button: When Voting Starts Notice */}
+            <button
+              onClick={openVotingLiveModal}
+              disabled={!!actionLoading}
+              title="When voting starts: Send live ballot notification to all alumni or a single person"
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs rounded-lg shadow-xs transition-colors disabled:opacity-50 inline-flex items-center gap-2"
+            >
+              {actionLoading === 'notify_live' ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+              <span>Send Voting Starts Notice</span>
+            </button>
+
             <button onClick={fetchAll} disabled={!!actionLoading}
               className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs rounded-lg transition-colors disabled:opacity-50 inline-flex items-center gap-2 border border-slate-200/80 dark:border-slate-700">
               <RefreshCw size={13} /><span>Refresh</span>
@@ -4572,11 +5722,14 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-4 mt-2.5 text-[11px] text-slate-400">
-            {statusInfo?.notifyLiveSentAt && (
-              <span>Last broadcast: {new Date(statusInfo.notifyLiveSentAt).toLocaleString()}</span>
+            {statusInfo?.reminder2DaySentAt && (
+              <span>Last 2-day notice: {new Date(statusInfo.reminder2DaySentAt).toLocaleString()}</span>
             )}
-            {statusInfo?.reminderSentAt && (
-              <span>Last reminder: {new Date(statusInfo.reminderSentAt).toLocaleString()}</span>
+            {statusInfo?.reminder1DaySentAt && (
+              <span>Last 1-day notice: {new Date(statusInfo.reminder1DaySentAt).toLocaleString()}</span>
+            )}
+            {statusInfo?.notifyLiveSentAt && (
+              <span>Last voting starts broadcast: {new Date(statusInfo.notifyLiveSentAt).toLocaleString()}</span>
             )}
           </div>
         </div>
@@ -4641,11 +5794,36 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
             </div>
           </div>
         )}
+
+        {/* Reusable Notify Alumni Modal (All or Single Person) */}
+        {isAdmin && (
+          <NotifyAlumniModal
+            isOpen={notifyModalConfig.open}
+            onClose={() => setNotifyModalConfig(prev => ({ ...prev, open: false }))}
+            title={notifyModalConfig.title}
+            subtitle={notifyModalConfig.subtitle}
+            badge={notifyModalConfig.badge}
+            onSend={handleSendVotingNotification}
+            isLoading={actionLoading === 'reminder_2day' || actionLoading === 'reminder_1day' || actionLoading === 'notify_live'}
+          />
+        )}
       </motion.div>
     );
   }
 
-  // ALUMNI: Voting Not Live
+  // ALUMNI: Voting Unpublished or Not Live
+  if (!isAdmin && publicationSettings && !publicationSettings.voting && votingStatus !== 'closed') {
+    return (
+      <AlumniUnpublishedNotice
+        icon={Vote}
+        badge="Official Status • Voting Not Live"
+        title="Voting Portal Is Currently Unpublished / Closed"
+        description="The digital ballot booth has not yet been published or opened for alumni voting. You will receive an official notification when voting begins."
+        actionLabel="Return to Dashboard"
+      />
+    );
+  }
+
   if (votingStatus === 'not_started') {
     return (
       <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="max-w-xl mx-auto">
@@ -4677,50 +5855,120 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
   }
 
   // ALUMNI: Active Ballot
-  const votedPositions = myVotes.votedPositions || [];
-  const totalVoted = votedPositions.length;
-  const totalPositions = 6;
-
   return (
-    <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto space-y-6">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-6 md:p-8 shadow-xs">
-        <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white">Cast Your Vote</h1>
-        <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">Select one candidate for each position. Once submitted, selections are final and cannot be altered.</p>
-      </div>
+    <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto space-y-6">
+      <header className="border-b border-slate-200 dark:border-slate-800 pb-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-purple-700 dark:text-purple-300">
+              <Vote size={15} />
+              <span>Official digital ballot</span>
+            </div>
+            <h1 className="text-xl md:text-2xl font-bold text-slate-900 dark:text-white">Cast Your Vote</h1>
+            <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400 mt-1">Choose a role, review its candidates, and cast one final vote.</p>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <ShieldCheck size={16} className="text-emerald-600 dark:text-emerald-400" />
+            <span>Secure ballot in progress</span>
+          </div>
+        </div>
+      </header>
 
       <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-xl p-4 shadow-xs">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Voting Progress</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <span id="voting-progress-title" className="text-xs font-semibold text-slate-700 dark:text-slate-300">Voting Progress</span>
           <span className="text-xs font-bold text-purple-600 dark:text-purple-400">{totalVoted} of {totalPositions} positions completed</span>
         </div>
-        <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden">
+        <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden" role="progressbar" aria-valuenow={totalVoted} aria-valuemin={0} aria-valuemax={totalPositions} aria-label={`${totalVoted} of ${totalPositions} positions completed`}>
           <motion.div
             initial={{ width: 0 }}
-            animate={{ width: `${(totalVoted / totalPositions) * 100}%` }}
+            animate={{ width: `${totalPositions > 0 ? (totalVoted / totalPositions) * 100 : 0}%` }}
             transition={{ duration: 0.5 }}
             className="h-full bg-purple-600 rounded-full"
           />
         </div>
       </div>
 
-      {ballot.map((posGroup: any) => {
+      <section aria-labelledby="role-selector-title" className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 id="role-selector-title" className="text-sm font-bold text-slate-900 dark:text-white">Select an election role</h2>
+            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Each role contains a separate candidate ballot.</p>
+          </div>
+          <span className="hidden text-[11px] font-medium text-slate-400 sm:inline">One vote per role</span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6" role="tablist" aria-label="Election roles">
+          {ballot.map((roleGroup: any, index: number) => {
+            const isSelected = selectedRole?.position === roleGroup.position;
+            const isComplete = votedPositions.includes(roleGroup.position);
+            const candidateCount = roleGroup.candidates?.length || 0;
+
+            return (
+              <button
+                key={roleGroup.position}
+                id={`role-tab-${index}`}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                aria-controls="selected-role-ballot"
+                onClick={() => setSelectedPosition(roleGroup.position)}
+                className={`relative min-h-[104px] rounded-lg border p-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${
+                  isSelected
+                    ? 'border-purple-500 bg-purple-50 text-purple-950 shadow-sm dark:border-purple-500 dark:bg-purple-950/35 dark:text-white'
+                    : isComplete
+                    ? 'border-emerald-200 bg-emerald-50/60 text-slate-800 hover:border-emerald-300 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-slate-100'
+                    : 'border-slate-200 bg-white text-slate-800 hover:border-purple-300 hover:bg-purple-50/40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-purple-800 dark:hover:bg-purple-950/20'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-md ${isSelected ? 'bg-purple-600 text-white' : isComplete ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}>
+                    {isComplete ? <CheckCircle2 size={15} /> : <Award size={15} />}
+                  </span>
+                  <span className={`text-[10px] font-bold ${isComplete ? 'text-emerald-700 dark:text-emerald-400' : isSelected ? 'text-purple-700 dark:text-purple-300' : 'text-slate-400'}`}>
+                    {isComplete ? 'VOTED' : `0${index + 1}`.slice(-2)}
+                  </span>
+                </div>
+                <span className="mt-3 block text-xs font-bold leading-snug">{roleGroup.position}</span>
+                <span className={`mt-1 block text-[10px] font-medium ${isSelected ? 'text-purple-700 dark:text-purple-300' : 'text-slate-500 dark:text-slate-400'}`}>
+                  {candidateCount} candidate{candidateCount === 1 ? '' : 's'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {ballot.filter((posGroup: any) => posGroup.position === selectedRole?.position).map((posGroup: any) => {
         const hasVoted = votedPositions.includes(posGroup.position);
         const myVote = myVotes.votes?.find((v: any) => v.position === posGroup.position);
 
         return (
-          <div key={posGroup.position} className={`bg-white dark:bg-slate-900 border ${hasVoted ? 'border-emerald-200 dark:border-emerald-900/40' : 'border-slate-200/90 dark:border-slate-800'} rounded-xl p-5 space-y-4 shadow-xs`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Award size={18} className={hasVoted ? 'text-emerald-600' : 'text-purple-600'} />
-                <h3 className="text-sm font-bold text-slate-800 dark:text-white">{posGroup.position}</h3>
-                <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-full font-medium">1 Post</span>
-              </div>
-              {hasVoted && (
-                <div className="flex items-center space-x-1 text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 size={14} />
-                  <span className="text-xs font-semibold">Vote Recorded</span>
+          <section
+            key={posGroup.position}
+            id="selected-role-ballot"
+            role="tabpanel"
+            aria-labelledby={`role-tab-${ballot.findIndex((group: any) => group.position === posGroup.position)}`}
+            className="space-y-4 pt-2"
+          >
+            <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${hasVoted ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400'}`}>
+                  {hasVoted ? <CheckCircle2 size={20} /> : <Award size={20} />}
                 </div>
-              )}
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white">{posGroup.position} Ballot</h2>
+                  <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                    {hasVoted
+                      ? `Your vote for ${myVote?.candidateName || 'this role'} has been securely recorded.`
+                      : `Select one of ${posGroup.candidates?.length || 0} eligible candidate${posGroup.candidates?.length === 1 ? '' : 's'}.`}
+                  </p>
+                </div>
+              </div>
+              <span className={`inline-flex w-fit items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-semibold ${hasVoted ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300' : 'border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/60 dark:bg-purple-950/30 dark:text-purple-300'}`}>
+                {hasVoted ? <CheckCircle2 size={13} /> : <Vote size={13} />}
+                {hasVoted ? 'Vote recorded' : 'Awaiting your vote'}
+              </span>
             </div>
 
             {hasVoted && myVote ? (
@@ -4731,34 +5979,41 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
                 </span>
               </div>
             ) : posGroup.candidates?.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">No candidates standing for this position</p>
+              <div className="flex min-h-[220px] flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-6 text-center dark:border-slate-700 dark:bg-slate-900">
+                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-slate-100 text-slate-400 dark:bg-slate-800">
+                  <Users size={21} />
+                </div>
+                <h3 className="mt-3 text-sm font-bold text-slate-800 dark:text-white">No candidates for this role</h3>
+                <p className="mt-1 max-w-sm text-xs leading-relaxed text-slate-500 dark:text-slate-400">No approved candidates are currently standing for {posGroup.position}.</p>
+              </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 {posGroup.candidates?.map((candidate: any) => (
-                  <div key={candidate._id} className="bg-white dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700/80 p-4 space-y-3 shadow-xs hover:border-purple-300 dark:hover:border-purple-700/60 transition-colors">
-                    <div className="flex items-start space-x-3">
+                  <article key={candidate._id} className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-xs transition-colors hover:border-purple-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-purple-800 sm:flex-row sm:items-center sm:p-5">
+                    <div className="flex min-w-0 flex-1 items-center gap-4">
                       {candidate.photo ? (
-                        <img src={candidate.photo} alt={candidate.name} className="w-12 h-12 rounded-lg object-cover border border-slate-200 dark:border-slate-700 flex-shrink-0" />
+                        <img src={candidate.photo} alt={candidate.name} className="h-16 w-16 flex-shrink-0 rounded-lg border border-slate-200 object-cover dark:border-slate-700 sm:h-20 sm:w-20" />
                       ) : (
-                        <div className="w-12 h-12 rounded-lg bg-purple-50 dark:bg-purple-950/50 flex items-center justify-center flex-shrink-0 text-purple-600 dark:text-purple-400 border border-purple-100 dark:border-purple-900/40">
-                          <User size={20} />
+                        <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-lg border border-purple-100 bg-purple-50 text-purple-600 dark:border-purple-900/40 dark:bg-purple-950/50 dark:text-purple-400 sm:h-20 sm:w-20">
+                          <User size={26} />
                         </div>
                       )}
                       <div className="min-w-0 flex-1">
-                        <h4 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-white truncate">{candidate.name}</h4>
-                        <p className="text-[11px] text-slate-500 mt-0.5">{candidate.department} • {candidate.graduationYear}</p>
-                        {candidate.roleCategory && (
-                          <span className="inline-block text-[10px] bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-md font-medium mt-1">{candidate.roleCategory}</span>
+                        <h3 className="truncate text-sm font-bold text-slate-900 dark:text-white sm:text-base">{candidate.name}</h3>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          <span className="inline-flex items-center gap-1"><Briefcase size={12} />{candidate.department || 'Department not listed'}</span>
+                          <span className="inline-flex items-center gap-1"><GraduationCap size={12} />Batch {candidate.graduationYear || 'not listed'}</span>
+                        </div>
+                        {(candidate.previousRoles?.length || candidate.roleCategory) && (
+                          <span className="inline-block text-[10px] bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-md font-medium mt-1">{candidate.previousRoles?.length ? candidate.previousRoles.join(', ') : candidate.roleCategory}</span>
                         )}
                       </div>
                     </div>
-                    {candidate.purposeStatement && (
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 italic">&quot;{candidate.purposeStatement}&quot;</p>
-                    )}
                     <button
+                      type="button"
                       onClick={() => castVote(posGroup.position, candidate._id)}
                       disabled={castingPosition === posGroup.position}
-                      className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs rounded-lg shadow-xs transition-colors disabled:opacity-50 inline-flex items-center justify-center space-x-1.5"
+                      className="inline-flex h-10 w-full flex-shrink-0 items-center justify-center gap-2 rounded-lg bg-purple-600 px-5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-purple-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:ring-offset-2 disabled:opacity-50 dark:focus-visible:ring-offset-slate-900 sm:w-[180px]"
                     >
                       {castingPosition === posGroup.position ? (
                         <><Loader2 size={13} className="animate-spin" /><span>Casting...</span></>
@@ -4766,11 +6021,11 @@ const VotingScreen = ({ isAdmin, token, userProfile }: any) => {
                         <><Check size={13} /><span>Vote for {candidate.name.split(' ')[0]}</span></>
                       )}
                     </button>
-                  </div>
+                  </article>
                 ))}
               </div>
             )}
-          </div>
+          </section>
         );
       })}
     </motion.div>
@@ -5113,8 +6368,120 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isDark, setIsDark] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [publicationSettings, setPublicationSettings] = useState<PublicationSettings>(DEFAULT_PUB_SETTINGS);
+  const [effectivePublicationSettings, setEffectivePublicationSettings] = useState<PublicationSettings>(CLOSED_PUB_SETTINGS);
+  const [loadingPubModule, setLoadingPubModule] = useState<string | null>(null);
+  const [showPubModal, setShowPubModal] = useState(false);
 
   const isAdmin = userProfile?.role === 'admin';
+
+  const fetchPublicationSettings = async () => {
+    try {
+      const authToken = token || localStorage.getItem('ems_token') || '';
+      const res = await fetch('http://localhost:5000/api/elections/publication-status', {
+        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.settings) {
+          setPublicationSettings(data.settings);
+        }
+        if (data?.effectiveSettings) {
+          setEffectivePublicationSettings(data.effectiveSettings);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch publication settings", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchPublicationSettings();
+    const refreshTimer = window.setInterval(fetchPublicationSettings, 60_000);
+    return () => window.clearInterval(refreshTimer);
+  }, [token]);
+
+  const portalPublicationSettings = isAdmin ? publicationSettings : effectivePublicationSettings;
+
+  const handleTogglePublishModule = async (moduleKey: string, nextStatus: boolean) => {
+    setLoadingPubModule(moduleKey);
+    const authToken = token || localStorage.getItem('ems_token') || '';
+    try {
+      const res = await fetch('http://localhost:5000/api/elections/publication-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+          moduleKey,
+          module: moduleKey,
+          isPublished: nextStatus,
+          status: nextStatus
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.settings) {
+        setPublicationSettings(data.settings);
+      } else {
+        alert(data.message || data.error || 'Failed to update publication status');
+      }
+    } catch (err: any) {
+      alert('Error updating publication status: ' + err.message);
+    } finally {
+      setLoadingPubModule(null);
+    }
+  };
+
+  const handlePublishAllModules = async () => {
+    if (!window.confirm("Are you sure you want to PUBLISH ALL modules to Alumni? Everything will become visible and active for alumni members.")) return;
+    setLoadingPubModule('all');
+    const authToken = token || localStorage.getItem('ems_token') || '';
+    try {
+      const res = await fetch('http://localhost:5000/api/elections/publication-status/publish-all', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.settings) {
+        setPublicationSettings(data.settings);
+      } else {
+        alert(data.message || data.error || 'Failed to publish all modules');
+      }
+    } catch (err: any) {
+      alert('Error publishing all modules: ' + err.message);
+    } finally {
+      setLoadingPubModule(null);
+    }
+  };
+
+  const handleUnpublishAllModules = async () => {
+    if (!window.confirm("Are you sure you want to UNPUBLISH ALL modules from Alumni? All alumni views will display pending publication notices.")) return;
+    setLoadingPubModule('all');
+    const authToken = token || localStorage.getItem('ems_token') || '';
+    try {
+      const res = await fetch('http://localhost:5000/api/elections/publication-status/unpublish-all', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.settings) {
+        setPublicationSettings(data.settings);
+      } else {
+        alert(data.message || data.error || 'Failed to unpublish all modules');
+      }
+    } catch (err: any) {
+      alert('Error unpublishing all modules: ' + err.message);
+    } finally {
+      setLoadingPubModule(null);
+    }
+  };
 
   useEffect(() => {
     if (isDark) {
@@ -5169,7 +6536,7 @@ export default function App() {
   const ALUMNI_TABS = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'announcements', label: 'Announcements', icon: Megaphone },
-    { id: 'eligibility', label: 'Eligibility Evaluator', icon: ClipboardCheck },
+    { id: 'eligibility', label: 'Eligibility Criteria', icon: ClipboardCheck },
     { id: 'apply', label: 'Propose Nominee', icon: UserPlus },
     { id: 'applications', label: 'My Nominations', icon: FolderOpen },
     { id: 'finalList', label: 'Final List', icon: Award },
@@ -5179,7 +6546,7 @@ export default function App() {
   const ADMIN_TABS = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'announcements', label: 'Announcements', icon: Megaphone },
-    { id: 'eligibility', label: 'Eligibility Evaluator', icon: ClipboardCheck },
+    { id: 'eligibility', label: 'Eligibility Criteria', icon: ClipboardCheck },
     { id: 'apply', label: 'Propose Nominee', icon: UserPlus },
     { id: 'scrutiny', label: 'Scrutiny Panel', icon: ShieldAlert },
     { id: 'finalList', label: 'Final List', icon: Award },
@@ -5188,7 +6555,15 @@ export default function App() {
     { id: 'voting', label: 'Voting Panel', icon: Vote }
   ];
 
-  const currentTabs = isAdmin ? ADMIN_TABS : ALUMNI_TABS;
+  const isAlumniTabAvailable = (tabId: string) => {
+    if (tabId === 'dashboard') return true;
+    const moduleKey = TAB_PUBLICATION_KEYS[tabId];
+    return !!moduleKey && !!effectivePublicationSettings[moduleKey];
+  };
+
+  const currentTabs = isAdmin
+    ? ADMIN_TABS
+    : ALUMNI_TABS.filter((tab) => isAlumniTabAvailable(tab.id));
 
   const handleTabChange = (tabId: string) => {
     if (!isAdmin && ['scrutiny', 'ec'].includes(tabId)) {
@@ -5196,8 +6571,19 @@ export default function App() {
       setActiveTab('dashboard');
       return;
     }
+
+    if (!isAdmin && !isAlumniTabAvailable(tabId)) {
+      setActiveTab('dashboard');
+      return;
+    }
     setActiveTab(tabId);
   };
+
+  useEffect(() => {
+    if (!isAdmin && !isAlumniTabAvailable(activeTab)) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, isAdmin, effectivePublicationSettings]);
 
   const renderContent = () => {
     if (!isAdmin && ['scrutiny', 'ec'].includes(activeTab)) {
@@ -5228,6 +6614,12 @@ export default function App() {
             token={token}
             userProfile={userProfile}
             onNavigate={(tab: string) => handleTabChange(tab)}
+            publicationSettings={portalPublicationSettings}
+            onTogglePublish={handleTogglePublishModule}
+            onPublishAll={handlePublishAllModules}
+            onUnpublishAll={handleUnpublishAllModules}
+            onOpenPubModal={() => setShowPubModal(true)}
+            loadingPubModule={loadingPubModule}
           />
         );
       case 'announcements':
@@ -5236,20 +6628,29 @@ export default function App() {
             isAdmin={isAdmin}
             token={token}
             userProfile={userProfile}
+            publicationSettings={portalPublicationSettings}
+            onTogglePublish={handleTogglePublishModule}
             onProceedToEligibility={() => handleTabChange('eligibility')}
             onProceedToApply={() => handleTabChange('apply')}
           />
         );
       case 'eligibility':
         return (
-          <EligibilityScreen
-            onProceedToApply={() => handleTabChange('apply')}
+          <EligibilityCriteriaScreen
+            isAdmin={isAdmin}
+            publicationSettings={portalPublicationSettings}
+            onTogglePublish={handleTogglePublishModule}
+            onNavigate={(tab: string) => handleTabChange(tab)}
           />
         );
       case 'apply':
         return (
           <ApplyScreen
+            isAdmin={isAdmin}
             userProfile={userProfile}
+            publicationSettings={portalPublicationSettings}
+            onTogglePublish={handleTogglePublishModule}
+            onNavigate={(tab: string) => handleTabChange(tab)}
             onNominationSuccess={() => {
               handleTabChange('applications');
             }}
@@ -5258,22 +6659,42 @@ export default function App() {
       case 'scrutiny':
         return <ScrutinyCommitteeScreen token={token} />;
       case 'finalList':
-        return <FinalCandidateListScreen isAdmin={isAdmin} token={token} />;
+        return (
+          <FinalCandidateListScreen
+            isAdmin={isAdmin}
+            token={token}
+            publicationSettings={portalPublicationSettings}
+            onTogglePublish={handleTogglePublishModule}
+          />
+        );
       case 'applications':
         return (
           <MyApplicationsScreen
+            isAdmin={isAdmin}
             userProfile={userProfile}
+            publicationSettings={portalPublicationSettings}
+            onTogglePublish={handleTogglePublishModule}
+            onNavigate={(tab: string) => handleTabChange(tab)}
             onProceedToApply={() => handleTabChange('apply')}
           />
         );
       case 'ec':
-        return <ECScreen onNavigate={(tab: string) => handleTabChange(tab)} />;
+        return (
+          <ECScreen
+            isAdmin={isAdmin}
+            publicationSettings={portalPublicationSettings}
+            onTogglePublish={handleTogglePublishModule}
+            onNavigate={(tab: string) => handleTabChange(tab)}
+          />
+        );
       case 'voting':
         return (
           <VotingScreen
             isAdmin={isAdmin}
             token={token}
             userProfile={userProfile}
+            publicationSettings={portalPublicationSettings}
+            onTogglePublish={handleTogglePublishModule}
           />
         );
       default:
@@ -5283,6 +6704,12 @@ export default function App() {
             token={token}
             userProfile={userProfile}
             onNavigate={(tab: string) => handleTabChange(tab)}
+            publicationSettings={portalPublicationSettings}
+            onTogglePublish={handleTogglePublishModule}
+            onPublishAll={handlePublishAllModules}
+            onUnpublishAll={handleUnpublishAllModules}
+            onOpenPubModal={() => setShowPubModal(true)}
+            loadingPubModule={loadingPubModule}
           />
         );
     }
@@ -5489,6 +6916,20 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-2.5 sm:space-x-3">
+            {isAdmin && (
+              <button
+                onClick={() => setShowPubModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-semibold backdrop-blur-xs transition-all shadow-xs border border-white/25 active:scale-95"
+                title="Manage alumni publication for all election modules"
+              >
+                <Globe size={13} className="text-white" />
+                <span className="hidden sm:inline">Alumni Publishing:</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-white text-purple-700 font-bold text-[10px]">
+                  {Object.values(publicationSettings || {}).filter(Boolean).length}/7 Live
+                </span>
+              </button>
+            )}
+
             <button
               onClick={() => setIsDark(!isDark)}
               className="p-1.5 rounded-lg text-white/90 hover:text-white hover:bg-white/15 transition-colors"
@@ -5514,6 +6955,19 @@ export default function App() {
           </AnimatePresence>
         </main>
       </div>
+
+      {/* Alumni Publication Control Center Modal */}
+      {isAdmin && (
+        <AlumniPublicationModal
+          isOpen={showPubModal}
+          onClose={() => setShowPubModal(false)}
+          publicationSettings={publicationSettings}
+          onTogglePublish={handleTogglePublishModule}
+          onPublishAll={handlePublishAllModules}
+          onUnpublishAll={handleUnpublishAllModules}
+          loadingModule={loadingPubModule}
+        />
+      )}
     </div>
   );
 }

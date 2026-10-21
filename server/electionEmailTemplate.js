@@ -1,3 +1,7 @@
+const { generateElectionAnnouncementEmail } = require('./officialElectionNoticeEmail');
+const { generateSeconderConsentEmail } = require('./officialSeconderConsentEmail');
+const { generateNomineeConsentEmail } = require('./officialNomineeConsentEmail');
+
 /**
  * Official Election Announcement Email Template Generator
  * Designed for National Engineering College Alumni Association (NECAA)
@@ -43,7 +47,7 @@ function formatDisplayDateTime(dateVal, timeVal, fallback) {
   }
 }
 
-function generateElectionAnnouncementEmail({
+function generateLegacyElectionAnnouncementEmail({
   announcement = {},
   recipientName = 'Esteemed Alumni Member',
   recipientEmail = '',
@@ -338,7 +342,7 @@ function generateElectionAnnouncementEmail({
   };
 }
 
-function generateSeconderConsentEmail({
+function generateLegacySeconderConsentEmail({
   proposer = {},
   nominee = {},
   seconder = {},
@@ -347,10 +351,23 @@ function generateSeconderConsentEmail({
   purposeStatement = '',
   nomineePhoto = null,
   consentToken = '',
+  consentExpiresAt = null,
   portalUrl = 'http://localhost:5173',
   apiBaseUrl = 'http://localhost:5000'
 }) {
   const positionsStr = Array.isArray(targetPositions) ? targetPositions.join(', ') : (targetPositions || 'Office Bearer');
+  const consentDeadline = new Date(consentExpiresAt || 0);
+  const consentDeadlineText = Number.isNaN(consentDeadline.getTime())
+    ? 'within 24 hours of this request'
+    : `${consentDeadline.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    })} IST`;
   const acceptUrl = `${apiBaseUrl}/api/nominations/seconding-consent?token=${consentToken}&decision=accept`;
   const declineUrl = `${apiBaseUrl}/api/nominations/seconding-consent?token=${consentToken}&decision=decline`;
   const dispatchId = `CONSENT-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
@@ -398,6 +415,10 @@ function generateSeconderConsentEmail({
           ⚖️ Constitutional Requirement: Under association election bylaws, every candidate must be proposed by an eligible alumni member and affirmatively seconded by another distinct member. This nomination <u>will not be submitted</u> to the Scrutiny Committee until you confirm your willingness.
         </p>
       </div>
+
+      <p style="margin: -10px 0 24px 0; padding: 12px 14px; background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; font-size: 13px; line-height: 1.55;">
+        Please respond by <strong>${consentDeadlineText}</strong>. If no response is received within 24 hours, this nomination will be automatically declined.
+      </p>
 
       <!-- NOMINATION SUMMARY CARD -->
       <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
@@ -634,7 +655,7 @@ function generateSeconderConfirmationPage({
   `;
 }
 
-function generateNomineeConsentEmail({
+function generateLegacyNomineeConsentEmail({
   proposer = {},
   nominee = {},
   seconder = {},
@@ -933,22 +954,216 @@ function generateNomineeConfirmationPage({
   `;
 }
 
-module.exports = {
-  generateElectionAnnouncementEmail,
-  generateSeconderConsentEmail,
-  generateSeconderConfirmationPage,
-  generateNomineeConsentEmail,
-  generateNomineeConfirmationPage,
-  generateVotingReminderEmail,
-  generateVotingLiveEmail,
-  generateVoteConfirmationEmail,
-  generateScrutinyApprovalEmail,
-  generateCandidatesPublishedEmail
-};
+const NEC_LOGO_URL = 'https://raw.githubusercontent.com/TharunG2006/Election_Management_System/main/public/nec-logo.png';
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function safeUrl(value, fallback = '#') {
+  const url = String(value || '').trim();
+  return /^https?:/i.test(url) ? escapeHtml(url) : fallback;
+}
+
+function renderOfficialElectionCardEmail({
+  subject = '',
+  eyebrow = '',
+  title = '',
+  recipientName = 'Esteemed Alumni Member',
+  recipientEmail = '',
+  leadHtml = '',
+  noticeHtml = '',
+  sectionTitle = '',
+  detailsHtml = '',
+  actionTitle = '',
+  actionButtonText = '',
+  actionUrl = '',
+  subNoteText = '',
+  footerNote = ''
+}) {
+  const safeLink = safeUrl(actionUrl, '#');
+  const safeRecipient = recipientEmail ? escapeHtml(recipientEmail) : 'the registered alumni email address';
+
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(subject)}</title>
+  <style>
+    @media only screen and (max-width: 620px) {
+      .email-shell { width: 100% !important; }
+      .content-pad { padding-left: 20px !important; padding-right: 20px !important; }
+      .action-cell { display: block !important; width: 100% !important; padding: 0 0 10px !important; }
+      .action-link { display: block !important; text-align: center !important; }
+    }
+  </style>
+</head>
+<body style="margin: 0; padding: 24px 10px; background: #f3f5f8; color: #172033; font-family: Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="640" class="email-shell" cellspacing="0" cellpadding="0" style="width: 640px; max-width: 640px; border-collapse: collapse; background: #ffffff; border: 1px solid #dbe2ec; border-top: 5px solid #7c3aed;">
+          <!-- HEADER / LETTERHEAD -->
+          <tr>
+            <td class="content-pad" style="padding: 24px 34px 20px; border-bottom: 1px solid #e4e9f1;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse;">
+                <tr>
+                  <td width="108" style="vertical-align: middle;">
+                    <img src="${NEC_LOGO_URL}" width="90" height="56" alt="NEC Alumni Association" style="display: block; width: 90px; height: 56px; object-fit: cover; object-position: center;">
+                  </td>
+                  <td style="vertical-align: middle;">
+                    <p style="margin: 0; color: #111827; font-size: 18px; line-height: 1.3; font-weight: 700;">National Engineering College</p>
+                    <p style="margin: 3px 0 0; color: #5e6f87; font-size: 13px; line-height: 1.4;">Alumni Association, Kovilpatti</p>
+                    <p style="margin: 3px 0 0; color: #7c3aed; font-size: 12px; line-height: 1.4; font-weight: 700;">Elections</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- TITLE & LEAD -->
+          <tr>
+            <td class="content-pad" style="padding: 28px 34px 10px;">
+              ${eyebrow ? `<p style="margin: 0 0 6px; color: #7c3aed; font-size: 12px; font-weight: 700; text-transform: uppercase;">${escapeHtml(eyebrow)}</p>` : ''}
+              <h1 style="margin: 0; color: #111827; font-size: 25px; line-height: 1.3; font-weight: 700;">${escapeHtml(title)}</h1>
+              <p style="margin: 18px 0 0; color: #172033; font-size: 15px; line-height: 1.65;">Dear ${escapeHtml(recipientName)},</p>
+              ${leadHtml}
+              ${noticeHtml ? `<div style="margin-top: 18px; padding: 12px 14px; background: #f7f8fb; border: 1px solid #e1e6ef; color: #52637a; font-size: 13px; line-height: 1.55;">${noticeHtml}</div>` : ''}
+            </td>
+          </tr>
+
+          <!-- DETAILS / TABLE -->
+          ${detailsHtml ? `
+          <tr>
+            <td class="content-pad" style="padding: 18px 34px 6px;">
+              ${sectionTitle ? `<p style="margin: 0 0 11px; color: #111827; font-size: 15px; font-weight: 700;">${escapeHtml(sectionTitle)}</p>` : ''}
+              ${detailsHtml}
+            </td>
+          </tr>
+          ` : ''}
+
+          <!-- ACTIONS / CTA -->
+          ${actionButtonText ? `
+          <tr>
+            <td class="content-pad" style="padding: 26px 34px 30px;">
+              ${actionTitle ? `<p style="margin: 0 0 14px; color: #111827; font-size: 16px; font-weight: 700;">${escapeHtml(actionTitle)}</p>` : ''}
+              <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse: collapse;">
+                <tr>
+                  <td class="action-cell">
+                    <a class="action-link" href="${safeLink}" style="display: inline-block; padding: 12px 24px; background: #7c3aed; border: 1px solid #7c3aed; color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; border-radius: 4px;">${escapeHtml(actionButtonText)}</a>
+                  </td>
+                </tr>
+              </table>
+              ${subNoteText ? `<p style="margin: 17px 0 0; color: #64748b; font-size: 12px; line-height: 1.55;">${subNoteText}</p>` : ''}
+            </td>
+          </tr>
+          ` : `
+          <tr>
+            <td class="content-pad" style="padding: 8px 34px 24px;">
+              ${subNoteText ? `<p style="margin: 10px 0 0; color: #64748b; font-size: 12px; line-height: 1.55;">${subNoteText}</p>` : ''}
+            </td>
+          </tr>
+          `}
+
+          <!-- FOOTER -->
+          <tr>
+            <td class="content-pad" style="padding: 20px 34px; background: #f7f8fb; border-top: 1px solid #e1e6ef;">
+              <p style="margin: 0; color: #172033; font-size: 13px; font-weight: 700;">Alumni Election Commission</p>
+              <p style="margin: 4px 0 0; color: #64748b; font-size: 12px; line-height: 1.5;">National Engineering College (Autonomous), Kovilpatti</p>
+              <p style="margin: 11px 0 0; color: #7b8798; font-size: 11px; line-height: 1.5;">${footerNote || `Sent to ${safeRecipient} regarding the NEC Alumni Association elections.`}</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  return { subject, html };
+}
+
+function renderCandidateSummaryRows(candidateSummary = []) {
+  if (!Array.isArray(candidateSummary) || !candidateSummary.length) return '';
+  return candidateSummary.map((c, idx) => `
+    <tr>
+      <td style="width: 38%; padding: 10px 14px; border-bottom: ${idx === candidateSummary.length - 1 ? '0' : '1px solid #e5eaf2'}; color: #52637a; font-size: 13px;">${escapeHtml(c.position || 'Position')}</td>
+      <td style="padding: 10px 14px; border-bottom: ${idx === candidateSummary.length - 1 ? '0' : '1px solid #e5eaf2'}; color: #172033; font-size: 13px; font-weight: 600;">${escapeHtml(c.count)} Candidate${Number(c.count) !== 1 ? 's' : ''}</td>
+    </tr>
+  `).join('');
+}
 
 /**
- * Voting Reminder Email — Sent 2 days before election to ALL alumni
+ * 1. Final Candidates Published Email — Sent to all alumni when final list is released
+ */
+function generateCandidatesPublishedEmail({
+  recipientName = 'Esteemed Alumnus',
+  electionYear = '2026',
+  appUrl = 'http://localhost:5173'
+}) {
+  const year = String(electionYear || '2026');
+  const tenure = `${year}–${Number(year) + 2}`;
+  const subject = `Official Notice: Final List of Candidates Published | NEC Alumni Elections ${year}`;
+
+  const leadHtml = `
+    <p style="margin: 12px 0 0; color: #334155; font-size: 15px; line-height: 1.65;">
+      The Alumni Election Scrutiny Committee has concluded the nomination verification, scrutiny, and withdrawal processes for the <strong>${escapeHtml(year)} Office Bearer Elections</strong>. The official final list of validated candidates is now published.
+    </p>
+    <p style="margin: 12px 0 0; color: #334155; font-size: 15px; line-height: 1.65;">
+      All alumni members may now view the confirmed roll of candidates standing for each office bearer position prior to the opening of the ballot.
+    </p>
+  `;
+
+  const noticeHtml = 'Nominations have closed and scrutiny is complete. Only validated candidates whose consents and seconding endorsements were verified appear on the official ballot.';
+
+  const detailsHtml = `
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: 1px solid #dbe3ef;">
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Election Year</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">${escapeHtml(year)} (Tenure ${escapeHtml(tenure)})</td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Notification Ref</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">AA/ELEC/${escapeHtml(year)}/FINAL</td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Positions Contested</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">President, Vice President, Secretary, Joint Secretary, Treasurer, Executive Committee</td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; color: #52637a; font-size: 13px;">Scrutiny Status</td>
+        <td style="padding: 11px 14px; color: #172033; font-size: 13px; font-weight: 600;">
+          <span style="display: inline-block; padding: 2px 7px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #059669; font-size: 11px; font-weight: 700; border-radius: 3px;">Verified & Published</span>
+        </td>
+      </tr>
+    </table>
+  `;
+
+  return renderOfficialElectionCardEmail({
+    subject,
+    eyebrow: 'FINAL CANDIDATE LIST',
+    title: 'Official Final List of Candidates Published',
+    recipientName,
+    recipientEmail: '',
+    leadHtml,
+    noticeHtml,
+    sectionTitle: 'Election details',
+    detailsHtml,
+    actionTitle: 'Review candidates on the portal',
+    actionButtonText: 'View Final Candidate List',
+    actionUrl: appUrl,
+    subNoteText: `You can review all verified candidates, qualifications, and past service by logging into the <a href="${safeUrl(appUrl, '#')}" style="color: #6d28d9; font-weight: 600;">Alumni Election Portal</a>.`
+  });
+}
+
+/**
+ * 2. Voting 2-Day Reminder Email — Sent 2 days before election (Day After Tomorrow is Voting Day)
  */
 function generateVotingReminderEmail({
   announcement = {},
@@ -961,128 +1176,138 @@ function generateVotingReminderEmail({
 }) {
   const year = announcement.electionYear || '2026';
   const tenure = `${year}–${Number(year) + 2}`;
-  const notifNumber = announcement.notificationNumber || 'AA/ELEC/2026/01';
+  const notifNumber = announcement.notificationNumber || `AA/ELEC/${year}/01`;
   const votingStartTime = announcement.electionStartTime || '10:00 AM';
   const votingEndTime = announcement.electionEndTime || '04:00 PM';
   const electionDateStr = formatDisplayDate(announcement.electionDate || announcement.votingDateTime || '2026-10-25', 'Sunday, October 25, 2026');
-  const votingWindowStr = `${electionDateStr} • ${votingStartTime} to ${votingEndTime} IST`;
 
-  const subject = `REMINDER: Alumni Association Elections in 2 Days — Cast Your Vote on ${electionDateStr} [Ref: ${notifNumber}]`;
+  const subject = `Election Notice: Voting Opens in 2 Days (Day After Tomorrow) | NEC Alumni Elections [Ref: ${notifNumber}]`;
 
-  const candidateRows = candidateSummary.map(c => `
-    <tr>
-      <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 700; color: #1e293b;">${c.position}</td>
-      <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px; color: #475569; text-align: center;">${c.count} Candidate${c.count !== 1 ? 's' : ''}</td>
-    </tr>
-  `).join('');
-
-  const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${subject}</title>
-</head>
-<body style="margin: 0; padding: 24px 10px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #1e293b;">
-  <div style="max-width: 680px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #cbd5e1; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08); overflow: hidden;">
-
-    <!-- LETTERHEAD -->
-    <div style="background: #0f172a; border-bottom: 4px solid #f59e0b; padding: 30px 24px; text-align: center; color: #ffffff;">
-      <h2 style="margin: 0 0 4px 0; font-size: 19px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #ffffff;">
-        National Engineering College (Autonomous)
-      </h2>
-      <p style="margin: 0 0 12px 0; font-size: 11px; color: #94a3b8; letter-spacing: 0.03em;">
-        Approved by AICTE • Affiliated to Anna University • K.R. Nagar, Kovilpatti - 628 503
-      </p>
-      <div style="background: rgba(30, 41, 59, 0.85); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px; padding: 12px; margin-top: 12px;">
-        <h1 style="margin: 0; font-size: 17px; font-weight: 800; color: #f59e0b; letter-spacing: 0.02em;">
-          ⏰ ELECTION REMINDER — 2 DAYS TO GO
-        </h1>
-        <p style="margin: 5px 0 0 0; font-size: 12px; color: #e2e8f0; font-weight: 600;">
-          Alumni Association (NECAA) • Office Bearer Elections ${year}
-        </p>
-      </div>
-      <div style="margin-top: 14px; font-size: 12px; color: #cbd5e1;">
-        <span style="background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 6px; margin: 0 4px;"><strong>Ref:</strong> ${notifNumber}</span>
-        <span style="background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 6px; margin: 0 4px;"><strong>Tenure:</strong> ${tenure}</span>
-      </div>
-    </div>
-
-    <!-- BODY -->
-    <div style="padding: 28px 24px; line-height: 1.65; color: #334155;">
-
-      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-left: 5px solid #f59e0b; border-radius: 10px; padding: 14px 18px; margin-bottom: 24px;">
-        <p style="margin: 0 0 4px 0; font-size: 15px; font-weight: 800; color: #0f172a;">
-          Dear ${recipientName},
-        </p>
-        <p style="margin: 0; font-size: 13px; color: #64748b;">
-          ${[recipientEmail, recipientDept, recipientBatch].filter(Boolean).join(' • ')}
-        </p>
-      </div>
-
-      <p style="font-size: 14px; margin: 0 0 14px 0; color: #334155;">
-        This is a <strong>formal reminder</strong> that the <strong>Alumni Association General Election for Executive Office Bearers</strong> for the <strong>${tenure} tenure</strong> is scheduled to take place in <strong>2 days</strong>.
-      </p>
-
-      <!-- ELECTION DATE -->
-      <div style="background: linear-gradient(135deg, #1e40af, #7c3aed); border-radius: 12px; padding: 20px 24px; margin: 20px 0; text-align: center; color: #ffffff;">
-        <p style="margin: 0 0 4px 0; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.7); font-weight: 700;">Voting Schedule</p>
-        <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff;">${votingWindowStr}</h2>
-        <p style="margin: 8px 0 0 0; font-size: 12px; color: rgba(255,255,255,0.8);">Online voting via the Alumni Election Portal</p>
-      </div>
-
-      <!-- CANDIDATES SUMMARY -->
-      ${candidateRows ? `
-      <div style="margin: 24px 0;">
-        <h3 style="margin: 0 0 10px 0; font-size: 14px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.03em;">Positions & Candidates Standing</h3>
-        <table style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-          <thead>
-            <tr style="background: #f1f5f9;">
-              <th style="padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: 700;">Position</th>
-              <th style="padding: 10px 12px; text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: 700;">Candidates</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${candidateRows}
-          </tbody>
-        </table>
-      </div>
-      ` : ''}
-
-      <!-- CTA -->
-      <div style="text-align: center; margin: 28px 0;">
-        <a href="${portalUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #ffffff; padding: 14px 36px; border-radius: 10px; font-weight: 800; font-size: 14px; text-decoration: none; letter-spacing: 0.02em; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);">
-          🗳️ Go to Election Portal
-        </a>
-        <p style="margin: 10px 0 0 0; font-size: 11px; color: #94a3b8;">You will be able to vote when polling opens on election day</p>
-      </div>
-
-      <div style="padding: 14px 18px; background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 8px; margin: 20px 0; font-size: 13px; color: #92400e;">
-        <strong>Important:</strong> Every registered alumni member is entitled to cast <strong>one vote per position</strong>. Please ensure you log in to your account and cast your votes during the designated voting window.
-      </div>
-    </div>
-
-    <!-- FOOTER -->
-    <div style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 24px; text-align: center;">
-      <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-        Alumni Election Commission • National Engineering College Alumni Association (NECAA)
-      </p>
-      <p style="margin: 4px 0 0 0; font-size: 10px; color: #cbd5e1;">
-        This is an official automated reminder. Please do not reply to this email.
-      </p>
-    </div>
-  </div>
-</body>
-</html>
+  const leadHtml = `
+    <p style="margin: 12px 0 0; color: #334155; font-size: 15px; line-height: 1.65;">
+      This is an official advance reminder that polling for the NEC Alumni Association Office Bearer Elections (${escapeHtml(year)}) will take place the day after tomorrow, <strong>${escapeHtml(electionDateStr)}</strong>.
+    </p>
+    <p style="margin: 12px 0 0; color: #334155; font-size: 15px; line-height: 1.65;">
+      The electronic voting booth will open promptly at <strong>${escapeHtml(votingStartTime)} IST</strong> and remain accessible until <strong>${escapeHtml(votingEndTime)} IST</strong>.
+    </p>
   `;
 
-  return { subject, html };
+  const noticeHtml = 'Under election rules, every registered alumni member is eligible to cast one confidential ballot across all 6 contested positions. Please mark your calendar and prepare to vote.';
+
+  const candidateRows = renderCandidateSummaryRows(candidateSummary);
+  const detailsHtml = `
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: 1px solid #dbe3ef;">
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Polling Date</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">
+          ${escapeHtml(electionDateStr)} <span style="display: inline-block; margin-left: 6px; padding: 2px 7px; background: #fef3c7; border: 1px solid #fde68a; color: #92400e; font-size: 11px; font-weight: 700; border-radius: 3px;">Day After Tomorrow</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Voting Hours</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">${escapeHtml(votingStartTime)} – ${escapeHtml(votingEndTime)} IST</td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: ${candidateRows ? '1px solid #e5eaf2' : '0'}; color: #52637a; font-size: 13px;">Notification Ref</td>
+        <td style="padding: 11px 14px; border-bottom: ${candidateRows ? '1px solid #e5eaf2' : '0'}; color: #172033; font-size: 13px; font-weight: 600;">${escapeHtml(notifNumber)} (Tenure ${escapeHtml(tenure)})</td>
+      </tr>
+      ${candidateRows}
+    </table>
+  `;
+
+  return renderOfficialElectionCardEmail({
+    subject,
+    eyebrow: 'VOTING REMINDER • 2 DAYS TO GO',
+    title: 'Voting opens the day after tomorrow',
+    recipientName,
+    recipientEmail,
+    leadHtml,
+    noticeHtml,
+    sectionTitle: 'Polling schedule & details',
+    detailsHtml,
+    actionTitle: 'Check election portal access',
+    actionButtonText: 'Open Election Portal',
+    actionUrl: portalUrl,
+    subNoteText: `The electronic ballot will be unlocked on ${escapeHtml(electionDateStr)} at ${escapeHtml(votingStartTime)} IST. You can sign in to the <a href="${safeUrl(portalUrl, '#')}" style="color: #6d28d9; font-weight: 600;">Alumni Election Portal</a> in advance to verify your account.`
+  });
 }
 
+function generateVoting2DayReminderEmail(params) {
+  return generateVotingReminderEmail(params);
+}
 
 /**
- * Voting Live Email — Sent when admin opens voting to ALL alumni
+ * 3. Voting 1-Day Reminder Email — Sent 1 day before election (Day Before Voting / Tomorrow)
+ */
+function generateVoting1DayReminderEmail({
+  announcement = {},
+  recipientName = 'Esteemed Alumni Member',
+  recipientEmail = '',
+  recipientDept = '',
+  recipientBatch = '',
+  portalUrl = 'http://localhost:5173',
+  candidateSummary = []
+}) {
+  const year = announcement.electionYear || '2026';
+  const tenure = `${year}–${Number(year) + 2}`;
+  const notifNumber = announcement.notificationNumber || `AA/ELEC/${year}/01`;
+  const votingStartTime = announcement.electionStartTime || '10:00 AM';
+  const votingEndTime = announcement.electionEndTime || '04:00 PM';
+  const electionDateStr = formatDisplayDate(announcement.electionDate || announcement.votingDateTime || '2026-10-25', 'Sunday, October 25, 2026');
+
+  const subject = `Election Notice: Voting Opens Tomorrow | NEC Alumni Elections [Ref: ${notifNumber}]`;
+
+  const leadHtml = `
+    <p style="margin: 12px 0 0; color: #334155; font-size: 15px; line-height: 1.65;">
+      This is an official eve-of-election reminder that polling for the NEC Alumni Association Office Bearer Elections will open tomorrow, <strong>${escapeHtml(electionDateStr)}</strong>.
+    </p>
+    <p style="margin: 12px 0 0; color: #334155; font-size: 15px; line-height: 1.65;">
+      Official polling hours are strictly from <strong>${escapeHtml(votingStartTime)} IST</strong> to <strong>${escapeHtml(votingEndTime)} IST</strong> tomorrow.
+    </p>
+  `;
+
+  const noticeHtml = `Polling opens promptly at <strong style="color: #172033;">${escapeHtml(votingStartTime)} IST</strong> tomorrow. Alumni members are requested to cast their vote within these hours. Ballots will automatically close at ${escapeHtml(votingEndTime)} IST.`;
+
+  const candidateRows = renderCandidateSummaryRows(candidateSummary);
+  const detailsHtml = `
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: 1px solid #dbe3ef;">
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Polling Date</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">
+          ${escapeHtml(electionDateStr)} <span style="display: inline-block; margin-left: 6px; padding: 2px 7px; background: #dbeafe; border: 1px solid #bfdbfe; color: #1e40af; font-size: 11px; font-weight: 700; border-radius: 3px;">Tomorrow</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Voting Hours</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">${escapeHtml(votingStartTime)} – ${escapeHtml(votingEndTime)} IST</td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: ${candidateRows ? '1px solid #e5eaf2' : '0'}; color: #52637a; font-size: 13px;">Notification Ref</td>
+        <td style="padding: 11px 14px; border-bottom: ${candidateRows ? '1px solid #e5eaf2' : '0'}; color: #172033; font-size: 13px; font-weight: 600;">${escapeHtml(notifNumber)}</td>
+      </tr>
+      ${candidateRows}
+    </table>
+  `;
+
+  return renderOfficialElectionCardEmail({
+    subject,
+    eyebrow: 'VOTING REMINDER • 1 DAY TO GO',
+    title: 'Voting opens tomorrow',
+    recipientName,
+    recipientEmail,
+    leadHtml,
+    noticeHtml,
+    sectionTitle: 'Polling schedule & positions',
+    detailsHtml,
+    actionTitle: 'Preview candidates & prepare to vote',
+    actionButtonText: 'Open Election Portal',
+    actionUrl: portalUrl,
+    subNoteText: `Polling starts tomorrow at ${escapeHtml(votingStartTime)} IST. You can sign in to the <a href="${safeUrl(portalUrl, '#')}" style="color: #6d28d9; font-weight: 600;">Alumni Election Portal</a> to review candidates in advance.`
+  });
+}
+
+/**
+ * 4. Voting Live Email — Sent when voting is active / starts
  */
 function generateVotingLiveEmail({
   announcement = {},
@@ -1095,132 +1320,64 @@ function generateVotingLiveEmail({
 }) {
   const year = announcement.electionYear || '2026';
   const tenure = `${year}–${Number(year) + 2}`;
-  const notifNumber = announcement.notificationNumber || 'AA/ELEC/2026/01';
+  const notifNumber = announcement.notificationNumber || `AA/ELEC/${year}/01`;
   const votingStartTime = announcement.electionStartTime || '10:00 AM';
   const votingEndTime = announcement.electionEndTime || '04:00 PM';
   const electionDateStr = formatDisplayDate(announcement.electionDate || announcement.votingDateTime || '2026-10-25', 'Sunday, October 25, 2026');
-  const votingWindowStr = `${electionDateStr} • ${votingStartTime} to ${votingEndTime} IST`;
 
-  const subject = `🗳️ VOTING IS NOW OPEN: Alumni Association Office Bearer Elections ${year} [Ref: ${notifNumber}]`;
+  const subject = `Official Notice: Voting is Now Live | NEC Alumni Elections ${year} [Ref: ${notifNumber}]`;
 
-  const candidateRows = candidateSummary.map(c => `
-    <tr>
-      <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 700; color: #1e293b;">${c.position}</td>
-      <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px; color: #475569; text-align: center;">${c.count} Candidate${c.count !== 1 ? 's' : ''}</td>
-    </tr>
-  `).join('');
-
-  const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${subject}</title>
-</head>
-<body style="margin: 0; padding: 24px 10px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #1e293b;">
-  <div style="max-width: 680px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #cbd5e1; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08); overflow: hidden;">
-
-    <!-- LETTERHEAD -->
-    <div style="background: #0f172a; border-bottom: 4px solid #22c55e; padding: 30px 24px; text-align: center; color: #ffffff;">
-      <h2 style="margin: 0 0 4px 0; font-size: 19px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #ffffff;">
-        National Engineering College (Autonomous)
-      </h2>
-      <p style="margin: 0 0 12px 0; font-size: 11px; color: #94a3b8; letter-spacing: 0.03em;">
-        Approved by AICTE • Affiliated to Anna University • K.R. Nagar, Kovilpatti - 628 503
-      </p>
-      <div style="background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 10px; padding: 14px; margin-top: 12px;">
-        <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #22c55e; letter-spacing: 0.02em;">
-          🗳️ VOTING IS NOW OPEN
-        </h1>
-        <p style="margin: 5px 0 0 0; font-size: 13px; color: #e2e8f0; font-weight: 600;">
-          Alumni Association (NECAA) • Office Bearer Elections ${year}
-        </p>
-      </div>
-      <div style="margin-top: 14px; font-size: 12px; color: #cbd5e1;">
-        <span style="background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 6px; margin: 0 4px;"><strong>Ref:</strong> ${notifNumber}</span>
-        <span style="background: rgba(255,255,255,0.08); padding: 4px 10px; border-radius: 6px; margin: 0 4px;"><strong>Tenure:</strong> ${tenure}</span>
-      </div>
-    </div>
-
-    <!-- BODY -->
-    <div style="padding: 28px 24px; line-height: 1.65; color: #334155;">
-
-      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-left: 5px solid #22c55e; border-radius: 10px; padding: 14px 18px; margin-bottom: 24px;">
-        <p style="margin: 0 0 4px 0; font-size: 15px; font-weight: 800; color: #0f172a;">
-          Dear ${recipientName},
-        </p>
-        <p style="margin: 0; font-size: 13px; color: #64748b;">
-          ${[recipientEmail, recipientDept, recipientBatch].filter(Boolean).join(' • ')}
-        </p>
-      </div>
-
-      <p style="font-size: 14px; margin: 0 0 14px 0; color: #334155;">
-        The <strong>Online Voting Portal</strong> for the <strong>Alumni Association General Election</strong> for Executive Office Bearers for the <strong>${tenure} tenure</strong> is now <strong style="color: #16a34a;">OFFICIALLY OPEN</strong>.
-      </p>
-
-      <p style="font-size: 14px; margin: 0 0 20px 0; color: #475569;">
-        Please log in to the Alumni Election Portal and cast your votes for each of the contested executive positions before the voting window closes.
-      </p>
-
-      <!-- VOTING WINDOW -->
-      <div style="background: linear-gradient(135deg, #15803d, #166534); border-radius: 12px; padding: 20px 24px; margin: 20px 0; text-align: center; color: #ffffff;">
-        <p style="margin: 0 0 4px 0; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.7); font-weight: 700;">Voting Window — Now Open</p>
-        <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff;">${votingWindowStr}</h2>
-        <p style="margin: 8px 0 0 0; font-size: 12px; color: rgba(255,255,255,0.8);">Cast your vote before the window closes</p>
-      </div>
-
-      <!-- CANDIDATES SUMMARY -->
-      ${candidateRows ? `
-      <div style="margin: 24px 0;">
-        <h3 style="margin: 0 0 10px 0; font-size: 14px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.03em;">Contested Positions</h3>
-        <table style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-          <thead>
-            <tr style="background: #f0fdf4;">
-              <th style="padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: 700;">Position</th>
-              <th style="padding: 10px 12px; text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: 700;">Candidates</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${candidateRows}
-          </tbody>
-        </table>
-      </div>
-      ` : ''}
-
-      <!-- CTA -->
-      <div style="text-align: center; margin: 28px 0;">
-        <a href="${portalUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #16a34a, #15803d); color: #ffffff; padding: 16px 42px; border-radius: 10px; font-weight: 800; font-size: 16px; text-decoration: none; letter-spacing: 0.02em; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);">
-          🗳️ CAST YOUR VOTE NOW
-        </a>
-        <p style="margin: 10px 0 0 0; font-size: 11px; color: #94a3b8;">Log in with your registered alumni credentials to vote</p>
-      </div>
-
-      <div style="padding: 14px 18px; background: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid #22c55e; border-radius: 8px; margin: 20px 0; font-size: 13px; color: #166534;">
-        <strong>Rules:</strong> Every registered alumni member is entitled to cast <strong>one vote per position</strong>. Votes once cast are final and cannot be changed. Admin accounts are not eligible to vote.
-      </div>
-    </div>
-
-    <!-- FOOTER -->
-    <div style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 24px; text-align: center;">
-      <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-        Alumni Election Commission • National Engineering College Alumni Association (NECAA)
-      </p>
-      <p style="margin: 4px 0 0 0; font-size: 10px; color: #cbd5e1;">
-        This is an official automated notification. Please do not reply to this email.
-      </p>
-    </div>
-  </div>
-</body>
-</html>
+  const leadHtml = `
+    <p style="margin: 12px 0 0; color: #334155; font-size: 15px; line-height: 1.65;">
+      The electronic voting panel for the National Engineering College Alumni Association Office Bearer Elections (${escapeHtml(year)}) is now officially open.
+    </p>
+    <p style="margin: 12px 0 0; color: #334155; font-size: 15px; line-height: 1.65;">
+      As an esteemed alumnus, your vote will determine the association's leadership for the <strong>${escapeHtml(tenure)}</strong> term. Please cast your ballot across all designated positions.
+    </p>
   `;
 
-  return { subject, html };
+  const noticeHtml = `Polling is currently live and will close promptly at <strong style="color: #172033;">${escapeHtml(votingEndTime)} IST today (${escapeHtml(electionDateStr)})</strong>. Once the voting deadline passes, the electronic ballot will be locked.`;
+
+  const candidateRows = renderCandidateSummaryRows(candidateSummary);
+  const detailsHtml = `
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: 1px solid #dbe3ef;">
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Ballot Status</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">
+          <span style="display: inline-block; padding: 2px 7px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #059669; font-size: 11px; font-weight: 700; border-radius: 3px;">Polling Active</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Closing Time</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">${escapeHtml(votingEndTime)} IST Today (${escapeHtml(electionDateStr)})</td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: ${candidateRows ? '1px solid #e5eaf2' : '0'}; color: #52637a; font-size: 13px;">Notification Ref</td>
+        <td style="padding: 11px 14px; border-bottom: ${candidateRows ? '1px solid #e5eaf2' : '0'}; color: #172033; font-size: 13px; font-weight: 600;">${escapeHtml(notifNumber)}</td>
+      </tr>
+      ${candidateRows}
+    </table>
+  `;
+
+  return renderOfficialElectionCardEmail({
+    subject,
+    eyebrow: 'VOTING IS NOW LIVE',
+    title: 'The election ballot is now open',
+    recipientName,
+    recipientEmail,
+    leadHtml,
+    noticeHtml,
+    sectionTitle: 'Ballot status & schedule',
+    detailsHtml,
+    actionTitle: 'Cast your secret ballot now',
+    actionButtonText: 'Proceed to Voting Panel',
+    actionUrl: portalUrl,
+    subNoteText: 'Your ballot is confidential and recorded with cryptographic privacy. Upon casting your votes, an official confirmation receipt will be issued to your email.'
+  });
 }
 
-
 /**
- * Vote Confirmation Email — Sent after voter completes all 6 votes
+ * 5. Vote Confirmation Email — Sent after voter completes ballots
  */
 function generateVoteConfirmationEmail({
   announcement = {},
@@ -1233,112 +1390,76 @@ function generateVoteConfirmationEmail({
 }) {
   const year = announcement.electionYear || '2026';
   const tenure = `${year}–${Number(year) + 2}`;
-  const notifNumber = announcement.notificationNumber || 'AA/ELEC/2026/01';
+  const notifNumber = announcement.notificationNumber || `AA/ELEC/${year}/01`;
 
-  const subject = `✅ VOTE CONFIRMED: Your Ballot for Alumni Association Elections ${year} Has Been Recorded [Ref: ${notifNumber}]`;
+  const subject = `Official Receipt: Ballot Recorded | NEC Alumni Association Elections ${year}`;
 
-  const voteRows = voteSummary.map(v => `
-    <tr>
-      <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 700; color: #1e293b;">${v.position}</td>
-      <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; color: #166534; font-weight: 600;">✅ Voted</td>
-    </tr>
-  `).join('');
-
-  const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${subject}</title>
-</head>
-<body style="margin: 0; padding: 24px 10px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #1e293b;">
-  <div style="max-width: 680px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #cbd5e1; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08); overflow: hidden;">
-
-    <!-- LETTERHEAD -->
-    <div style="background: #0f172a; border-bottom: 4px solid #22c55e; padding: 30px 24px; text-align: center; color: #ffffff;">
-      <h2 style="margin: 0 0 4px 0; font-size: 19px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #ffffff;">
-        National Engineering College (Autonomous)
-      </h2>
-      <p style="margin: 0 0 12px 0; font-size: 11px; color: #94a3b8; letter-spacing: 0.03em;">
-        Approved by AICTE • Affiliated to Anna University • K.R. Nagar, Kovilpatti - 628 503
-      </p>
-      <div style="background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 10px; padding: 14px; margin-top: 12px;">
-        <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #22c55e; letter-spacing: 0.02em;">
-          ✅ VOTE SUCCESSFULLY RECORDED
-        </h1>
-        <p style="margin: 5px 0 0 0; font-size: 13px; color: #e2e8f0; font-weight: 600;">
-          Alumni Association (NECAA) • Office Bearer Elections ${year}
-        </p>
-      </div>
-    </div>
-
-    <!-- BODY -->
-    <div style="padding: 28px 24px; line-height: 1.65; color: #334155;">
-
-      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-left: 5px solid #22c55e; border-radius: 10px; padding: 14px 18px; margin-bottom: 24px;">
-        <p style="margin: 0 0 4px 0; font-size: 15px; font-weight: 800; color: #0f172a;">
-          Dear ${recipientName},
-        </p>
-        <p style="margin: 0; font-size: 13px; color: #64748b;">
-          ${[recipientEmail, recipientDept, recipientBatch].filter(Boolean).join(' • ')}
-        </p>
-      </div>
-
-      <p style="font-size: 14px; margin: 0 0 14px 0; color: #334155;">
-        Thank you for participating in the <strong>Alumni Association General Election</strong>. Your votes for all <strong>6 Executive Office Bearer positions</strong> for the <strong>${tenure} tenure</strong> have been <strong style="color: #16a34a;">successfully recorded</strong>.
-      </p>
-
-      <!-- VOTE SUMMARY -->
-      <div style="margin: 24px 0;">
-        <h3 style="margin: 0 0 10px 0; font-size: 14px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.03em;">Your Ballot Summary</h3>
-        <table style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-          <thead>
-            <tr style="background: #f0fdf4;">
-              <th style="padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: 700;">Position</th>
-              <th style="padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; font-weight: 700;">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${voteRows}
-          </tbody>
-        </table>
-        <p style="margin: 8px 0 0 0; font-size: 11px; color: #94a3b8; font-style: italic;">
-          For ballot secrecy, individual candidate selections are not disclosed in this receipt.
-        </p>
-      </div>
-
-      <div style="background: linear-gradient(135deg, #15803d, #166534); border-radius: 12px; padding: 20px 24px; margin: 20px 0; text-align: center; color: #ffffff;">
-        <p style="margin: 0 0 4px 0; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.7); font-weight: 700;">Ballot Status</p>
-        <h2 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff;">🔒 Ballot Sealed & Locked</h2>
-        <p style="margin: 8px 0 0 0; font-size: 12px; color: rgba(255,255,255,0.8);">Your votes are final and cannot be modified or recast</p>
-      </div>
-
-      <div style="padding: 14px 18px; background: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid #22c55e; border-radius: 8px; margin: 20px 0; font-size: 13px; color: #166534;">
-        <strong>Thank you</strong> for exercising your franchise. Election results will be announced after voting closes and tallies are certified by the Election Commission.
-      </div>
-    </div>
-
-    <!-- FOOTER -->
-    <div style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 24px; text-align: center;">
-      <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-        Alumni Election Commission • National Engineering College Alumni Association (NECAA)
-      </p>
-      <p style="margin: 4px 0 0 0; font-size: 10px; color: #cbd5e1;">
-        This is an official automated confirmation. Please do not reply to this email.
-      </p>
-    </div>
-  </div>
-</body>
-</html>
+  const leadHtml = `
+    <p style="margin: 12px 0 0; color: #334155; font-size: 15px; line-height: 1.65;">
+      Thank you for participating in the NEC Alumni Association Office Bearer Elections (${escapeHtml(year)}). Your ballot has been successfully received, encrypted, and recorded in the election register.
+    </p>
+    <p style="margin: 12px 0 0; color: #334155; font-size: 15px; line-height: 1.65;">
+      Your submission has been sealed. In accordance with election bylaws, individual voter selections remain strictly anonymous and cannot be altered or cast again.
+    </p>
   `;
 
-  return { subject, html };
+  const noticeHtml = 'Ballot recorded and sealed. Your individual vote selections are confidential and stored in compliance with the constitutional voting rules of the NEC Alumni Association.';
+
+  const voteRows = Array.isArray(voteSummary) && voteSummary.length
+    ? voteSummary.map((v, idx) => `
+        <tr>
+          <td style="width: 38%; padding: 10px 14px; border-bottom: ${idx === voteSummary.length - 1 ? '0' : '1px solid #e5eaf2'}; color: #52637a; font-size: 13px;">${escapeHtml(v.position || 'Position')}</td>
+          <td style="padding: 10px 14px; border-bottom: ${idx === voteSummary.length - 1 ? '0' : '1px solid #e5eaf2'}; color: #059669; font-size: 13px; font-weight: 700;">Recorded &#10003;</td>
+        </tr>
+      `).join('')
+    : `
+      <tr>
+        <td style="width: 38%; padding: 10px 14px; color: #52637a; font-size: 13px;">Ballot Status</td>
+        <td style="padding: 10px 14px; color: #059669; font-size: 13px; font-weight: 700;">All Positions Recorded &#10003;</td>
+      </tr>
+    `;
+
+  const detailsHtml = `
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: 1px solid #dbe3ef;">
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Voter</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">
+          ${escapeHtml(recipientName)}${recipientDept ? ` (${escapeHtml(recipientDept)}${recipientBatch ? `, Class of ${escapeHtml(recipientBatch)}` : ''})` : ''}
+        </td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Ballot Status</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">
+          <span style="display: inline-block; padding: 2px 7px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #059669; font-size: 11px; font-weight: 700; border-radius: 3px;">Sealed & Verified</span>
+        </td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Election Reference</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">${escapeHtml(notifNumber)} (Tenure ${escapeHtml(tenure)})</td>
+      </tr>
+      ${voteRows}
+    </table>
+  `;
+
+  return renderOfficialElectionCardEmail({
+    subject,
+    eyebrow: 'BALLOT RECEIPT',
+    title: 'Your ballot has been officially recorded',
+    recipientName,
+    recipientEmail,
+    leadHtml,
+    noticeHtml,
+    sectionTitle: 'Submission receipt',
+    detailsHtml,
+    actionTitle: 'Return to the alumni portal',
+    actionButtonText: 'Return to Election Portal',
+    actionUrl: portalUrl,
+    subNoteText: 'Official election results will be compiled and certified by the Alumni Election Commission once all voting has concluded.'
+  });
 }
 
-
 /**
- * Scrutiny Approval Confirmation Email — Sent to Nominee when Scrutiny is Passed
+ * 6. Scrutiny Approval Confirmation Email — Sent to Nominee when Scrutiny is Passed
  */
 function generateScrutinyApprovalEmail({
   nomineeName = 'Esteemed Nominee',
@@ -1346,108 +1467,67 @@ function generateScrutinyApprovalEmail({
   announcement = {}
 }) {
   const year = announcement.electionYear || '2026';
-  const positionsStr = targetPositions.join(' and ');
-  const subject = `🎉 SCRUTINY PASSED: Your Nomination for ${positionsStr} has been APPROVED`;
+  const positionsStr = Array.isArray(targetPositions) ? targetPositions.join(' and ') : String(targetPositions || '');
+  const subject = `Official Notice: Nomination Approved by Scrutiny Committee | NEC Alumni Elections ${year}`;
 
-  const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${subject}</title>
-</head>
-<body style="margin: 0; padding: 24px 10px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #1e293b;">
-  <div style="max-width: 680px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #cbd5e1; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08); overflow: hidden;">
-    <div style="background: #0f172a; border-bottom: 4px solid #22c55e; padding: 30px 24px; text-align: center; color: #ffffff;">
-      <h2 style="margin: 0 0 4px 0; font-size: 19px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;">
-        National Engineering College (Autonomous)
-      </h2>
-      <div style="background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 10px; padding: 14px; margin-top: 12px;">
-        <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #22c55e; letter-spacing: 0.02em;">
-          ✅ NOMINATION SCRUTINY PASSED
-        </h1>
-      </div>
-    </div>
-    <div style="padding: 28px 24px; line-height: 1.65; color: #334155;">
-      <p style="margin: 0 0 14px 0; font-size: 15px;">Dear <strong>${nomineeName}</strong>,</p>
-      <p style="margin: 0 0 14px 0;">We are pleased to inform you that your nomination for the position(s) of <strong>${positionsStr}</strong> has been carefully reviewed and <strong>approved</strong> by the Alumni Election Scrutiny Committee.</p>
-      <p style="margin: 0 0 14px 0;">Your candidacy for the Alumni Association Office Bearer Elections (${year}) is now official and confirmed.</p>
-      <div style="background: linear-gradient(135deg, #15803d, #166534); border-radius: 12px; padding: 20px 24px; margin: 20px 0; text-align: center; color: #ffffff;">
-        <h2 style="margin: 0; font-size: 18px; font-weight: 800;">Congratulations on your Approved Candidacy!</h2>
-        <p style="margin: 8px 0 0 0; font-size: 13px; color: rgba(255,255,255,0.9);">You will be featured on the final election ballot once voting commences.</p>
-      </div>
-      <p style="margin: 0;">We wish you the very best in the upcoming election.</p>
-    </div>
-    <div style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 24px; text-align: center;">
-      <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-        Alumni Election Scrutiny Committee • National Engineering College Alumni Association (NECAA)
-      </p>
-    </div>
-  </div>
-</body>
-</html>
-  `;
-  return { subject, html };
-}
-
-
-/**
- * Final Candidates Published Email — Sent to all alumni when final list is released
- */
-function generateCandidatesPublishedEmail({
-  recipientName = 'Esteemed Alumnus',
-  electionYear = '2026',
-  appUrl = 'http://localhost:5173'
-}) {
-  const subject = `📢 OFFICIAL RELEASE: Final List of Candidates for ${electionYear} Election`;
-
-  const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${subject}</title>
-</head>
-<body style="margin: 0; padding: 24px 10px; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #1e293b;">
-  <div style="max-width: 680px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #cbd5e1; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08); overflow: hidden;">
-    <div style="background: #0f172a; border-bottom: 4px solid #3b82f6; padding: 30px 24px; text-align: center; color: #ffffff;">
-      <h2 style="margin: 0 0 4px 0; font-size: 19px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase;">
-        National Engineering College (Autonomous)
-      </h2>
-      <div style="background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 10px; padding: 14px; margin-top: 12px;">
-        <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #3b82f6; letter-spacing: 0.02em;">
-          🏆 FINAL CANDIDATES LIST PUBLISHED
-        </h1>
-      </div>
-    </div>
-    
-    <div style="padding: 28px 24px; line-height: 1.65; color: #334155;">
-      <p style="margin: 0 0 14px 0; font-size: 15px;">Dear <strong>${recipientName}</strong>,</p>
-      
-      <p style="margin: 0 0 14px 0;">The Alumni Election Scrutiny Committee has completed the verification and withdrawal process. We are pleased to announce that the <strong>Official Final List of Candidates</strong> for the ${electionYear} Office Bearer Elections has been officially published.</p>
-      
-      <p style="margin: 0 0 14px 0;">You can now view the finalized roll of candidates standing for election across all positions.</p>
-      
-      <div style="text-align: center; margin: 24px 0;">
-        <a href="${appUrl}" style="display: inline-block; background-color: #3b82f6; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: 700; font-size: 15px; letter-spacing: 0.02em; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);">
-          View Final Candidate List
-        </a>
-      </div>
-      
-      <p style="margin: 0;">Stay tuned for the official voting dates and access links.</p>
-    </div>
-    
-    <div style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 24px; text-align: center;">
-      <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-        Alumni Election Commission • National Engineering College Alumni Association (NECAA)
-      </p>
-    </div>
-  </div>
-</body>
-</html>
+  const leadHtml = `
+    <p style="margin: 12px 0 0; color: #334155; font-size: 15px; line-height: 1.65;">
+      The Alumni Election Scrutiny Committee has completed review of your nomination for the position of <strong>${escapeHtml(positionsStr)}</strong>.
+    </p>
+    <p style="margin: 12px 0 0; color: #334155; font-size: 15px; line-height: 1.65;">
+      Your candidacy complies with all constitutional eligibility criteria and qualifying service requirements. Your nomination is formally <strong>approved</strong>.
+    </p>
   `;
 
-  return { subject, html };
+  const noticeHtml = 'Your candidacy is confirmed. Your profile and nomination statement will appear on the official candidate roll and on the election ballot.';
+
+  const detailsHtml = `
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: 1px solid #dbe3ef;">
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Candidate</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">${escapeHtml(nomineeName)}</td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #52637a; font-size: 13px;">Approved Position</td>
+        <td style="padding: 11px 14px; border-bottom: 1px solid #e5eaf2; color: #172033; font-size: 13px; font-weight: 600;">${escapeHtml(positionsStr)}</td>
+      </tr>
+      <tr>
+        <td style="width: 38%; padding: 11px 14px; color: #52637a; font-size: 13px;">Scrutiny Decision</td>
+        <td style="padding: 11px 14px; color: #172033; font-size: 13px; font-weight: 600;">
+          <span style="display: inline-block; padding: 2px 7px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #059669; font-size: 11px; font-weight: 700; border-radius: 3px;">Approved & Validated</span>
+        </td>
+      </tr>
+    </table>
+  `;
+
+  return renderOfficialElectionCardEmail({
+    subject,
+    eyebrow: 'SCRUTINY DECISION',
+    title: 'Your nomination has been approved',
+    recipientName: nomineeName,
+    recipientEmail: '',
+    leadHtml,
+    noticeHtml,
+    sectionTitle: 'Candidacy details',
+    detailsHtml,
+    actionTitle: 'Review your candidacy on the portal',
+    actionButtonText: 'Open Election Portal',
+    actionUrl: 'http://localhost:5173',
+    subNoteText: 'We wish you the very best in the upcoming election.'
+  });
 }
+
+module.exports = {
+  generateElectionAnnouncementEmail,
+  generateSeconderConsentEmail,
+  generateSeconderConfirmationPage,
+  generateNomineeConsentEmail,
+  generateNomineeConfirmationPage,
+  generateVotingReminderEmail,
+  generateVoting2DayReminderEmail,
+  generateVoting1DayReminderEmail,
+  generateVotingLiveEmail,
+  generateVoteConfirmationEmail,
+  generateScrutinyApprovalEmail,
+  generateCandidatesPublishedEmail
+};

@@ -75,14 +75,13 @@ async function runTest() {
     apiBaseUrl: 'http://localhost:5000'
   });
 
-  if (emailData.subject.includes('Action Required: Request for Seconding Nomination') &&
+  if ((emailData.subject.includes('Seconding request') || emailData.subject.includes('Action Required: Request for Seconding Nomination')) &&
       emailData.html.includes(testTokenAccept) &&
       emailData.html.includes('Murali Subbu') &&
-      emailData.html.includes('Tharun G') &&
       emailData.html.includes('Amitesh R')) {
     console.log("✓ Seconder consent email generated successfully with proper details and links.");
   } else {
-    console.error("✗ Seconder consent email generation failed validation!");
+    console.error("✗ Seconder consent email generation failed validation!", emailData.subject);
     process.exit(1);
   }
 

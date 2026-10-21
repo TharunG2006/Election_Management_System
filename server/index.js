@@ -16,13 +16,15 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
-const { 
-  generateElectionAnnouncementEmail, 
+const { generateElectionAnnouncementEmail } = require('./officialElectionNoticeEmail');
+const {
   generateSeconderConsentEmail, 
   generateSeconderConfirmationPage,
   generateNomineeConsentEmail,
   generateNomineeConfirmationPage,
   generateVotingReminderEmail,
+  generateVoting2DayReminderEmail,
+  generateVoting1DayReminderEmail,
   generateVotingLiveEmail,
   generateVoteConfirmationEmail,
   generateScrutinyApprovalEmail,
@@ -31,6 +33,8 @@ const {
 
 const app = express();
 const port = process.env.PORT || 5000;
+const ELECTION_EMAIL_LOGO_PATH = path.join(__dirname, '..', 'public', 'nec-logo.png');
+const DEFAULT_ELECTION_EMAIL_LOGO_URL = 'https://raw.githubusercontent.com/TharunG2006/Election_Management_System/main/public/nec-logo.png';
 
 function createMailTransporter(customPass, customUser) {
   const smtpUser = (customUser || process.env.SMTP_USER || 'muralisubbu11@gmail.com').trim();
@@ -64,50 +68,86 @@ function createMailTransporter(customPass, customUser) {
  */
 async function resolveNomineePhotoUrl(photoDataUrl) {
   if (!photoDataUrl) return null;
-  if (photoDataUrl.startsWith('http://') || photoDataUrl.startsWith('https://')) {
-    return photoDataUrl;
+  const trimmed = String(photoDataUrl).trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
   }
   
-  try {
-    const result = await cloudinary.uploader.upload(photoDataUrl, {
-      folder: 'election_nominees',
-      resource_type: 'image'
-    });
-    console.log(`[PhotoHost] Nominee photo hosted at: ${result.secure_url}`);
-    return result.secure_url;
-  } catch (err) {
-    console.warn("[PhotoHost] Could not upload photo to Cloudinary:", err.message);
+  // 1. Try Cloudinary if configured
+  if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET) {
+    try {
+      const result = await cloudinary.uploader.upload(trimmed, {
+        folder: 'election_nominees',
+        resource_type: 'image'
+      });
+      if (result && result.secure_url) {
+        console.log(`[PhotoHost] Nominee photo hosted at Cloudinary: ${result.secure_url}`);
+        return result.secure_url;
+      }
+    } catch (err) {
+      console.warn("[PhotoHost] Could not upload photo to Cloudinary:", err.message);
+    }
   }
-  return null;
+
+  // 2. Upload to public permanent image host (Catbox) - free, anonymous, direct https link
+  try {
+    const matches = trimmed.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    const mimeType = matches ? matches[1] : 'image/jpeg';
+    const buffer = Buffer.from(matches ? matches[2] : trimmed, 'base64');
+    const ext = mimeType.split('/')[1]?.replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
+    const blob = new Blob([buffer], { type: mimeType });
+    const form = new FormData();
+    form.append('reqtype', 'fileupload');
+    form.append('fileToUpload', blob, `nominee_${Date.now()}.${ext}`);
+
+    const catboxRes = await fetch('https://catbox.moe/user/api.php', {
+      method: 'POST',
+      body: form
+    });
+    if (catboxRes.ok) {
+      const hostedUrl = (await catboxRes.text()).trim();
+      if (/^https?:\/\//i.test(hostedUrl)) {
+        console.log(`[PhotoHost] Nominee photo hosted at Catbox: ${hostedUrl}`);
+        return hostedUrl;
+      }
+    }
+  } catch (catboxErr) {
+    console.warn("[PhotoHost] Could not upload photo to Catbox:", catboxErr.message);
+  }
+
+  // 3. Save local copy to uploads directory
+  try {
+    const uploadsDir = path.join(__dirname, 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    const matches = trimmed.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    const mimeType = matches ? matches[1] : 'image/jpeg';
+    const buffer = Buffer.from(matches ? matches[2] : trimmed, 'base64');
+    const ext = mimeType.split('/')[1]?.replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
+    const filename = `nominee_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${ext}`;
+    const filePath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filePath, buffer);
+
+    const serverUrl = (process.env.SERVER_URL || '').trim();
+    if (/^https:\/\//i.test(serverUrl)) {
+      const publicUrl = `${serverUrl.replace(/\/$/, '')}/uploads/${filename}`;
+      console.log(`[PhotoHost] Nominee photo saved and served at: ${publicUrl}`);
+      return publicUrl;
+    }
+  } catch (localErr) {
+    console.warn("[PhotoHost] Could not save local photo copy:", localErr.message);
+  }
+
+  // 4. Return original data URI if remote hosting was unreachable
+  return trimmed;
 }
 
-/**
- * Converts a base64 data URL to a nodemailer CID inline attachment (fallback).
- * @param {string|null} dataUrl  - e.g. "data:image/jpeg;base64,/9j/..."
- * @param {string} cid           - Content-ID used in HTML as <img src="cid:xxx">
- * @returns {{ cidUrl: string, attachment: object }|null}
- */
-function buildPhotoAttachment(dataUrl, cid = 'nominee-photo') {
-  if (!dataUrl) return null;
-  if (dataUrl.startsWith('http://') || dataUrl.startsWith('https://')) {
-    return {
-      cidUrl: dataUrl,
-      attachment: null
-    };
-  }
-  const matches = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-  if (!matches) return null;
-  const [, mimeType, base64Data] = matches;
-  return {
-    cidUrl: `cid:${cid}`,
-    attachment: {
-      filename: false,
-      content: Buffer.from(base64Data, 'base64'),
-      contentType: mimeType,
-      cid,
-      contentDisposition: 'inline'
-    }
-  };
+function getPublicEmailImageUrl(imageUrl) {
+  const normalized = String(imageUrl || '').trim();
+  if (/^https?:\/\//i.test(normalized)) return normalized;
+  if (/^data:image\/[a-zA-Z0-9+.-]+;base64,/i.test(normalized)) return normalized;
+  return null;
 }
 
 app.use(cors());
@@ -118,6 +158,159 @@ const uri = process.env.MONGODB_URI;
 const client = new MongoClient(uri);
 
 let db;
+const CONSENT_RESPONSE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const CONSENT_EXPIRY_SWEEP_MS = 60 * 1000;
+
+function deadlineFrom(startedAt) {
+  const start = new Date(startedAt || 0);
+  return Number.isNaN(start.getTime())
+    ? null
+    : new Date(start.getTime() + CONSENT_RESPONSE_WINDOW_MS);
+}
+
+async function normalizePendingConsentDeadlines() {
+  const applications = db.collection('applications');
+  const pending = await applications.find({
+    status: { $in: ['pending_seconding', 'pending_nominee_consent'] }
+  }).project({
+    status: 1,
+    createdAt: 1,
+    submittedAt: 1,
+    updatedAt: 1,
+    seconderConsentAt: 1,
+    seconderConsentRequestedAt: 1,
+    seconderConsentExpiresAt: 1,
+    nomineeConsentRequestedAt: 1,
+    nomineeConsentExpiresAt: 1
+  }).toArray();
+
+  const operations = [];
+  for (const application of pending) {
+    if (application.status === 'pending_seconding') {
+      const startedAt = application.seconderConsentRequestedAt || application.createdAt || application.submittedAt;
+      const deadline = deadlineFrom(startedAt);
+      const currentDeadline = new Date(application.seconderConsentExpiresAt || 0);
+      if (deadline && (Number.isNaN(currentDeadline.getTime()) || currentDeadline > deadline)) {
+        operations.push({
+          updateOne: {
+            filter: { _id: application._id, status: 'pending_seconding' },
+            update: { $set: { seconderConsentRequestedAt: new Date(startedAt), seconderConsentExpiresAt: deadline } }
+          }
+        });
+      }
+    }
+
+    if (application.status === 'pending_nominee_consent') {
+      const startedAt = application.nomineeConsentRequestedAt || application.seconderConsentAt || application.updatedAt || application.submittedAt;
+      const deadline = deadlineFrom(startedAt);
+      const currentDeadline = new Date(application.nomineeConsentExpiresAt || 0);
+      if (deadline && (Number.isNaN(currentDeadline.getTime()) || currentDeadline > deadline)) {
+        operations.push({
+          updateOne: {
+            filter: { _id: application._id, status: 'pending_nominee_consent' },
+            update: { $set: { nomineeConsentRequestedAt: new Date(startedAt), nomineeConsentExpiresAt: deadline } }
+          }
+        });
+      }
+    }
+  }
+
+  if (operations.length) {
+    await applications.bulkWrite(operations, { ordered: false });
+  }
+}
+
+async function expirePendingConsents(now = new Date()) {
+  const applications = db.collection('applications');
+  const [secondingResult, nomineeResult] = await Promise.all([
+    applications.updateMany(
+      {
+        status: 'pending_seconding',
+        seconderConsentExpiresAt: { $lte: now },
+        $or: [
+          { seconderConsentStatus: 'pending' },
+          { seconderConsentStatus: { $exists: false } }
+        ]
+      },
+      {
+        $set: {
+          status: 'seconding_declined',
+          seconderConsentStatus: 'declined',
+          seconderConsentAt: now,
+          seconderConsentExpiredAt: now,
+          seconderConsentDecisionReason: 'No response received within 24 hours.'
+        }
+      }
+    ),
+    applications.updateMany(
+      {
+        status: 'pending_nominee_consent',
+        nomineeConsentExpiresAt: { $lte: now },
+        $or: [
+          { nomineeConsentStatus: 'pending' },
+          { nomineeConsentStatus: { $exists: false } }
+        ]
+      },
+      {
+        $set: {
+          status: 'nominee_declined',
+          nomineeConsentStatus: 'declined',
+          nomineeConsentAt: now,
+          nomineeConsentExpiredAt: now,
+          nomineeConsentDecisionReason: 'No response received within 24 hours.'
+        }
+      }
+    )
+  ]);
+
+  const expiredCount = secondingResult.modifiedCount + nomineeResult.modifiedCount;
+  if (expiredCount) {
+    console.log(`[ConsentExpiry] Automatically declined ${expiredCount} expired consent request(s).`);
+  }
+  return expiredCount;
+}
+
+async function expireApplicationConsentIfNeeded(application, consentType, now = new Date()) {
+  const isSeconding = consentType === 'seconder';
+  const pendingStatus = isSeconding ? 'pending_seconding' : 'pending_nominee_consent';
+  const consentStatusField = isSeconding ? 'seconderConsentStatus' : 'nomineeConsentStatus';
+  const expiresField = isSeconding ? 'seconderConsentExpiresAt' : 'nomineeConsentExpiresAt';
+  const expiredAtField = isSeconding ? 'seconderConsentExpiredAt' : 'nomineeConsentExpiredAt';
+  const consentAtField = isSeconding ? 'seconderConsentAt' : 'nomineeConsentAt';
+  const reasonField = isSeconding ? 'seconderConsentDecisionReason' : 'nomineeConsentDecisionReason';
+  const declinedStatus = isSeconding ? 'seconding_declined' : 'nominee_declined';
+  const expiresAt = new Date(application?.[expiresField] || 0);
+
+  if (
+    application?.status !== pendingStatus ||
+    (application?.[consentStatusField] && application[consentStatusField] !== 'pending') ||
+    Number.isNaN(expiresAt.getTime()) ||
+    expiresAt > now
+  ) {
+    return false;
+  }
+
+  const result = await db.collection('applications').updateOne(
+    {
+      _id: application._id,
+      status: pendingStatus,
+      $or: [
+        { [consentStatusField]: 'pending' },
+        { [consentStatusField]: { $exists: false } }
+      ]
+    },
+    {
+      $set: {
+        status: declinedStatus,
+        [consentStatusField]: 'declined',
+        [consentAtField]: now,
+        [expiredAtField]: now,
+        [reasonField]: 'No response received within 24 hours.'
+      }
+    }
+  );
+  return result.modifiedCount > 0;
+}
 
 // Security & RBAC Configuration
 const JWT_SECRET = process.env.JWT_SECRET || 'ems_super_secret_jwt_key_2026_alumni_system';
@@ -240,6 +433,15 @@ async function startServer() {
 
       // Initialize designated administrator account
       await provisionAdminAccount();
+      await normalizePendingConsentDeadlines();
+      await expirePendingConsents();
+
+      const consentExpiryTimer = setInterval(() => {
+        expirePendingConsents().catch((err) => {
+          console.error('[ConsentExpiry] Sweep failed:', err.message);
+        });
+      }, CONSENT_EXPIRY_SWEEP_MS);
+      consentExpiryTimer.unref();
 
       app.listen(port, () => {
         console.log(`Server listening on port ${port}`);
@@ -299,9 +501,9 @@ const DEFAULT_ANNOUNCEMENT = {
   finalListDate: "2026-10-18T10:00:00.000Z",
   votingDateTime: "2026-10-25T10:00:00.000Z",
   contactInfo: "",
-  emailSubject: "OFFICIAL NOTIFICATION: Alumni Association Office Bearer Elections 2026 – Call for Nominations [Ref: AA/ELEC/2026/01]",
-  emailIntro: "Notice is hereby formally given to all registered alumni members regarding the Alumni Association General Election for Executive Office Bearers for the 2026–2028 tenure.",
-  emailBody: "In accordance with the Alumni Association Constitution, nominations are hereby called for the forthcoming AGM. Notification is formally published via the official Alumni portal at least one month prior to the AGM.",
+  emailSubject: "National Engineering College Alumni Association Election 2026: Official notice and schedule [AA/ELEC/2026/01]",
+  emailIntro: "The Alumni Association Election Commission invites eligible alumni members to participate in the 2026 election for Executive Office Bearers.",
+  emailBody: "This notice summarises the eligibility requirements, nomination process, publication milestones and voting window. All election actions and status updates are handled through the Alumni Election Portal.",
   emailCustomNotes: "",
   emailSignOffAuthorized: "Alumni Election Commission",
   emailSignOffApproved: "Patron & Principal",
@@ -322,6 +524,95 @@ const DEFAULT_ANNOUNCEMENT = {
     "Final list published after scrutiny with a withdrawal window provided."
   ]
 };
+
+const ELECTION_TIMEZONE_OFFSET_MINUTES = 330; // Asia/Kolkata (IST)
+
+function configuredDateParts(value) {
+  const dateText = value instanceof Date ? value.toISOString() : String(value || '');
+  const match = dateText.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3])
+  };
+}
+
+function configuredTimeParts(value, fallback = '12:00 AM') {
+  const timeText = String(value || fallback).trim();
+  const match = timeText.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+  if (!match) return configuredTimeParts(fallback, '12:00 AM');
+
+  let hour = Number(match[1]);
+  const meridiem = (match[4] || '').toUpperCase();
+  if (meridiem === 'AM' && hour === 12) hour = 0;
+  if (meridiem === 'PM' && hour !== 12) hour += 12;
+
+  return { hour, minute: Number(match[2]), second: Number(match[3] || 0) };
+}
+
+function electionInstant(dateValue, timeValue = '12:00 AM') {
+  const date = configuredDateParts(dateValue);
+  if (!date) return null;
+  const time = configuredTimeParts(timeValue);
+  return new Date(
+    Date.UTC(date.year, date.month - 1, date.day, time.hour, time.minute, time.second) -
+      ELECTION_TIMEZONE_OFFSET_MINUTES * 60 * 1000
+  );
+}
+
+function electionDayEnd(dateValue) {
+  const date = configuredDateParts(dateValue);
+  if (!date) return null;
+  return new Date(
+    Date.UTC(date.year, date.month - 1, date.day + 1) -
+      ELECTION_TIMEZONE_OFFSET_MINUTES * 60 * 1000 - 1
+  );
+}
+
+function isWithin(now, start, end) {
+  return !!start && !!end && now >= start && now <= end;
+}
+
+function buildElectionAvailability(announcement, now = new Date()) {
+  const nominationStart = electionInstant(announcement.nominationStartDate);
+  const nominationEnd = electionDayEnd(announcement.nominationDeadline);
+  const withdrawalEnd = electionDayEnd(announcement.withdrawalDeadline);
+  const finalListStart = electionInstant(announcement.finalListDate);
+  const votingDate = announcement.electionDate || announcement.votingDateTime || announcement.agmDate;
+  const votingStart = electionInstant(votingDate, announcement.electionStartTime || '10:00 AM');
+  const votingEnd = electionInstant(votingDate, announcement.electionEndTime || '04:00 PM');
+  const electionEnd = votingEnd || electionDayEnd(votingDate);
+
+  const availability = {
+    announcements: !!electionEnd && now <= electionEnd,
+    eligibility: true,
+    apply: isWithin(now, nominationStart, nominationEnd),
+    applications: isWithin(now, nominationStart, withdrawalEnd),
+    finalList: isWithin(now, finalListStart, electionEnd),
+    voting: isWithin(now, votingStart, votingEnd),
+    timelines: !!electionEnd && now <= electionEnd
+  };
+
+  const toIso = (value) => value ? value.toISOString() : null;
+  return {
+    availability,
+    timezone: 'Asia/Kolkata',
+    serverTime: now.toISOString(),
+    windows: {
+      nomination: { start: toIso(nominationStart), end: toIso(nominationEnd) },
+      applications: { start: toIso(nominationStart), end: toIso(withdrawalEnd) },
+      finalList: { start: toIso(finalListStart), end: toIso(electionEnd) },
+      voting: { start: toIso(votingStart), end: toIso(votingEnd) }
+    }
+  };
+}
+
+async function getElectionScheduleContext() {
+  const stored = await db.collection('announcements').findOne({}, { sort: { updatedAt: -1 } });
+  const announcement = { ...DEFAULT_ANNOUNCEMENT, ...(stored || {}) };
+  return { announcement, ...buildElectionAvailability(announcement) };
+}
 
 // Fetch Election Announcement
 // Admin sees draft or published; Alumni/Public only sees published announcements
@@ -373,9 +664,22 @@ app.post('/api/elections/announcement', authenticateToken, requireAdmin, async (
       updatedAt: new Date(),
       updatedBy: req.user.email
     };
+    const votingDate = updateData.electionDate || updateData.votingDateTime;
+    const votingStart = electionInstant(votingDate, updateData.electionStartTime);
+    const votingEnd = electionInstant(votingDate, updateData.electionEndTime);
+    if (!votingDate || !votingStart || !votingEnd || votingEnd <= votingStart) {
+      return res.status(400).json({
+        error: 'Voting date, start time, and end time are required. The end time must be after the start time.'
+      });
+    }
     await db.collection('announcements').updateOne(
       {},
       { $set: updateData },
+      { upsert: true }
+    );
+    await db.collection('publication_settings').updateOne(
+      {},
+      { $set: { announcements: updateData.status === 'published', updatedAt: new Date(), updatedBy: req.user.email } },
       { upsert: true }
     );
     res.json({ success: true, message: "Election announcement updated successfully", data: updateData });
@@ -393,6 +697,242 @@ app.delete('/api/elections/announcement', authenticateToken, requireAdmin, async
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to delete announcement' });
+  }
+});
+
+// ============================================================
+// COMPREHENSIVE ALUMNI PUBLICATION CONTROLS
+// ============================================================
+
+// Helper: retrieve current publication status across all alumni modules
+async function getPublicationSettings() {
+  const custom = await db.collection('publication_settings').findOne({}) || {};
+  const ann = await db.collection('announcements').findOne({}, { sort: { updatedAt: -1 } });
+  const voteCfg = await db.collection('voting_config').findOne({}) || {};
+
+  return {
+    announcements: custom.announcements !== undefined ? !!custom.announcements : (ann ? ann.status === 'published' : true),
+    eligibility: custom.eligibility !== undefined ? !!custom.eligibility : true,
+    apply: custom.apply !== undefined ? !!custom.apply : true,
+    applications: custom.applications !== undefined ? !!custom.applications : true,
+    finalList: custom.finalList !== undefined ? !!custom.finalList : !!voteCfg.candidatesPublished,
+    voting: custom.voting !== undefined ? !!custom.voting : (voteCfg.status === 'live'),
+    timelines: custom.timelines !== undefined ? !!custom.timelines : true
+  };
+}
+
+async function getEffectiveAlumniSettings() {
+  const settings = await getPublicationSettings();
+  const schedule = await getElectionScheduleContext();
+  const effectiveSettings = Object.fromEntries(
+    Object.keys(settings).map((key) => [key, !!settings[key] && !!schedule.availability[key]])
+  );
+  return { settings, effectiveSettings, ...schedule };
+}
+
+// GET Publication Status for all modules
+app.get('/api/elections/publication-status', optionalAuth, async (req, res) => {
+  try {
+    const { settings, effectiveSettings, availability, windows, timezone, serverTime } = await getEffectiveAlumniSettings();
+    const isAdmin = req.user && req.user.role === 'admin';
+    res.json({
+      success: true,
+      settings,
+      effectiveSettings,
+      availability,
+      windows,
+      timezone,
+      serverTime,
+      isAdmin
+    });
+  } catch (err) {
+    console.error("Error fetching publication status:", err);
+    res.status(500).json({ error: 'Failed to fetch publication status' });
+  }
+});
+
+// POST Update Publication Status for specific module or full set (Admin Only)
+app.post('/api/elections/publication-status', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const key = req.body.moduleKey || req.body.module;
+    const pubStatus = req.body.isPublished !== undefined ? req.body.isPublished : req.body.status;
+    const { settings: newSettings } = req.body;
+    let updates = {};
+
+    if (key) {
+      updates[key] = !!pubStatus;
+    } else if (newSettings && typeof newSettings === 'object') {
+      updates = { ...newSettings };
+    } else {
+      return res.status(400).json({ error: 'moduleKey/module and isPublished/status or settings object is required.' });
+    }
+
+    // Sync underlying models
+    if (updates.announcements !== undefined) {
+      await db.collection('announcements').updateOne(
+        {},
+        { $set: { status: updates.announcements ? 'published' : 'draft', updatedAt: new Date(), updatedBy: req.user.email } },
+        { upsert: true }
+      );
+    }
+
+    if (updates.finalList !== undefined) {
+      await db.collection('voting_config').updateOne(
+        {},
+        { $set: { candidatesPublished: !!updates.finalList, publishedAt: updates.finalList ? new Date() : null } },
+        { upsert: true }
+      );
+    }
+
+    if (updates.voting !== undefined) {
+      await db.collection('voting_config').updateOne(
+        {},
+        {
+          $set: {
+            status: updates.voting ? 'live' : 'closed',
+            ...(updates.voting ? { openedAt: new Date(), openedBy: req.user.email, closedAt: null } : { closedAt: new Date(), closedBy: req.user.email })
+          }
+        },
+        { upsert: true }
+      );
+    }
+
+    await db.collection('publication_settings').updateOne(
+      {},
+      {
+        $set: {
+          ...updates,
+          updatedAt: new Date(),
+          updatedBy: req.user.email
+        }
+      },
+      { upsert: true }
+    );
+
+    const settings = await getPublicationSettings();
+    res.json({
+      success: true,
+      message: key ? `Module '${key}' ${updates[key] ? 'published live to alumni' : 'unpublished and set to draft'}.` : 'Publication settings updated.',
+      settings
+    });
+  } catch (err) {
+    console.error("Error updating publication status:", err);
+    res.status(500).json({ error: 'Failed to update publication status' });
+  }
+});
+
+// POST Publish Everything to Alumni (Admin Only)
+app.post('/api/elections/publication-status/publish-all', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const allPublished = {
+      announcements: true,
+      eligibility: true,
+      apply: true,
+      applications: true,
+      finalList: true,
+      voting: true,
+      timelines: true
+    };
+
+    // Sync models
+    await db.collection('announcements').updateOne(
+      {},
+      { $set: { status: 'published', updatedAt: new Date(), updatedBy: req.user.email } },
+      { upsert: true }
+    );
+
+    await db.collection('voting_config').updateOne(
+      {},
+      {
+        $set: {
+          candidatesPublished: true,
+          publishedAt: new Date(),
+          status: 'live',
+          openedAt: new Date(),
+          openedBy: req.user.email,
+          closedAt: null
+        }
+      },
+      { upsert: true }
+    );
+
+    await db.collection('publication_settings').updateOne(
+      {},
+      {
+        $set: {
+          ...allPublished,
+          updatedAt: new Date(),
+          updatedBy: req.user.email
+        }
+      },
+      { upsert: true }
+    );
+
+    res.json({
+      success: true,
+      message: 'All 7 election modules published live to alumni!',
+      settings: allPublished
+    });
+  } catch (err) {
+    console.error("Error publishing all modules:", err);
+    res.status(500).json({ error: 'Failed to publish all modules' });
+  }
+});
+
+// POST Unpublish Everything from Alumni (Admin Only)
+app.post('/api/elections/publication-status/unpublish-all', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const allUnpublished = {
+      announcements: false,
+      eligibility: false,
+      apply: false,
+      applications: false,
+      finalList: false,
+      voting: false,
+      timelines: false
+    };
+
+    // Sync models
+    await db.collection('announcements').updateOne(
+      {},
+      { $set: { status: 'draft', updatedAt: new Date(), updatedBy: req.user.email } },
+      { upsert: true }
+    );
+
+    await db.collection('voting_config').updateOne(
+      {},
+      {
+        $set: {
+          candidatesPublished: false,
+          publishedAt: null,
+          status: 'closed',
+          closedAt: new Date(),
+          closedBy: req.user.email
+        }
+      },
+      { upsert: true }
+    );
+
+    await db.collection('publication_settings').updateOne(
+      {},
+      {
+        $set: {
+          ...allUnpublished,
+          updatedAt: new Date(),
+          updatedBy: req.user.email
+        }
+      },
+      { upsert: true }
+    );
+
+    res.json({
+      success: true,
+      message: 'All election modules unpublished and hidden from alumni.',
+      settings: allUnpublished
+    });
+  } catch (err) {
+    console.error("Error unpublishing all modules:", err);
+    res.status(500).json({ error: 'Failed to unpublish all modules' });
   }
 });
 
@@ -444,6 +984,7 @@ app.post('/api/elections/announcement/send-email', authenticateToken, requireAdm
     }
 
     const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const electionLogoSource = process.env.ELECTION_EMAIL_LOGO_URL || DEFAULT_ELECTION_EMAIL_LOGO_URL;
 
     // Configure Live Gmail Mailer (Strictly real emails from muralisubbu11@gmail.com)
     const smtpUser = (req.body?.smtpUser || process.env.SMTP_USER || 'muralisubbu11@gmail.com').trim();
@@ -510,11 +1051,13 @@ app.post('/api/elections/announcement/send-email', authenticateToken, requireAdm
 
         const { subject, html } = generateElectionAnnouncementEmail({
           announcement,
+          electionPositions: ELECTION_POSITIONS,
           recipientName,
           recipientEmail: email,
           recipientDept,
           recipientBatch,
-          portalUrl
+          portalUrl,
+          logoSource: electionLogoSource
         });
 
         await transporter.sendMail({
@@ -571,13 +1114,18 @@ const handleEmailPreview = async (req, res) => {
       ...(req.body || {})
     };
     const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const logoSource = fs.existsSync(ELECTION_EMAIL_LOGO_PATH)
+      ? `data:image/png;base64,${fs.readFileSync(ELECTION_EMAIL_LOGO_PATH).toString('base64')}`
+      : `${portalUrl.replace(/\/$/, '')}/nec-logo.png`;
     const emailData = generateElectionAnnouncementEmail({
       announcement,
+      electionPositions: ELECTION_POSITIONS,
       recipientName: req.user.name || 'Esteemed Alumni Member',
       recipientEmail: req.user.email,
       recipientDept: req.user.department || 'Computer Science and Engineering',
       recipientBatch: req.user.batch || 'Class of 2022',
-      portalUrl
+      portalUrl,
+      logoSource
     });
 
     res.json({ success: true, ...emailData });
@@ -1165,8 +1713,16 @@ app.post('/api/alumni/verify-nominee', async (req, res) => {
 
 // Submit Nomination Application (Proposal-Driven: No Self-Nomination & Strict Real Alumni Validation)
 // Submit Nomination Application (Proposal-Driven: Requires Affirmative Seconder Willingness Consent)
-app.post('/api/applications', async (req, res) => {
+app.post('/api/applications', optionalAuth, async (req, res) => {
   try {
+    // Admins may prepare records at any time; alumni must be inside the published nomination window.
+    const { effectiveSettings } = await getEffectiveAlumniSettings();
+    if (req.user?.role !== 'admin' && !effectiveSettings.apply) {
+      return res.status(403).json({
+        error: 'Nomination submissions are only accepted between the configured nomination start date and deadline.'
+      });
+    }
+
     const {
       proposer,
       nominee,
@@ -1269,17 +1825,81 @@ app.post('/api/applications', async (req, res) => {
     }
 
     // STRICT RULE: President role eligibility - Must have served as an Office Bearer in preceding 5 years
-    const positions = Array.isArray(targetPositions) ? targetPositions : (targetPositions ? [targetPositions] : []);
+    const positions = (Array.isArray(targetPositions) ? targetPositions : (targetPositions ? [targetPositions] : []))
+      .map(position => String(position || '').trim())
+      .filter(Boolean);
+    if (positions.length !== 1) {
+      return res.status(400).json({ error: 'Exactly one office bearer position must be selected for each nomination.' });
+    }
+    if (!ELECTION_POSITIONS.includes(positions[0])) {
+      return res.status(400).json({ error: 'The selected office bearer position is not valid.' });
+    }
+    const allowedResponsibilityRoles = [
+      'Office Bearer',
+      'Chapter Coordinator',
+      'Alumni Association Club Coordinator',
+      'Mentorship or Placement Coordinator',
+      'Data Management Team Coordinator'
+    ];
+    const submittedPreviousRoles = Array.isArray(previousRoles)
+      ? previousRoles
+      : (roleCategory ? String(roleCategory).split(',') : []);
+    const normalizedPreviousRoles = [...new Set(submittedPreviousRoles
+      .map(role => String(role || '').trim())
+      .filter(role => allowedResponsibilityRoles.includes(role)))];
+    if (normalizedPreviousRoles.length === 0) {
+      return res.status(400).json({ error: 'Select at least one previous responsibility held by the nominee.' });
+    }
+
+    const normalizedRoleDurations = {};
+    const serviceYearOwners = new Map();
+    for (const role of normalizedPreviousRoles) {
+      const years = [...new Set(
+        (Array.isArray(roleDurations?.[role]) ? roleDurations[role] : [])
+          .map(year => Number(year))
+          .filter(year => Number.isInteger(year) && year >= 2021 && year <= 2026)
+      )].sort((a, b) => a - b);
+      if (years.length === 0) {
+        return res.status(400).json({ error: `Select at least one service year for ${role}.` });
+      }
+      for (const year of years) {
+        if (serviceYearOwners.has(year)) {
+          return res.status(400).json({
+            error: `${year} cannot be assigned to both ${serviceYearOwners.get(year)} and ${role}.`
+          });
+        }
+        serviceYearOwners.set(year, role);
+      }
+      normalizedRoleDurations[role] = years.map(String);
+    }
+
+    const serviceYears = [...serviceYearOwners.keys()].sort((a, b) => a - b);
+    if (serviceYears.length === 0) {
+      return res.status(400).json({ error: 'Select at least one nominee service year between 2021 and 2026.' });
+    }
+    const hasContinuousService = serviceYears.every(
+      (year, index) => index === 0 || year === serviceYears[index - 1] + 1
+    );
+    if (!hasContinuousService) {
+      return res.status(400).json({ error: 'Nominee service years must be consecutive without a break.' });
+    }
+    const normalizedContinuousService = {
+      ...(continuousService || {}),
+      years: serviceYears.length,
+      serviceYears: serviceYears.map(String),
+      withoutGap: true
+    };
     if (positions.includes('President')) {
-      if (roleCategory !== 'Office Bearer') {
+      if (!normalizedRoleDurations['Office Bearer']?.length) {
         return res.status(400).json({
-          error: 'Ineligible for President'
+          error: 'President nominees must have at least one Office Bearer service year between 2021 and 2026.'
         });
       }
     }
 
     // Generate secure seconding consent token
     const seconderConsentToken = crypto.randomBytes(32).toString('hex');
+    const seconderConsentRequestedAt = new Date();
 
     const newApplication = {
       applicantEmail: nomineeEmail,
@@ -1299,11 +1919,11 @@ app.post('/api/applications', async (req, res) => {
       },
       proposer: proposer || { name: '', email: proposerEmail, phone: '', batch: '' },
       seconder: seconder || { name: '', email: seconderEmail, phone: '', batch: '' },
-      targetPositions: Array.isArray(targetPositions) ? targetPositions : [targetPositions],
-      previousRoles: previousRoles || [],
-      roleDurations: roleDurations || {},
-      roleCategory: roleCategory || 'Office Bearer',
-      continuousService: continuousService || { years: 1, withoutGap: true, details: '' },
+      targetPositions: positions,
+      previousRoles: normalizedPreviousRoles,
+      roleDurations: normalizedRoleDurations,
+      roleCategory: normalizedPreviousRoles.join(', '),
+      continuousService: normalizedContinuousService,
       purposeStatement: purposeStatement || motivation || '',
       motivation: purposeStatement || motivation || '',
       nomineePhoto: nomineePhoto || null,
@@ -1311,7 +1931,8 @@ app.post('/api/applications', async (req, res) => {
       status: 'pending_seconding',
       seconderConsentStatus: 'pending',
       seconderConsentToken,
-      seconderConsentExpiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      seconderConsentRequestedAt,
+      seconderConsentExpiresAt: new Date(seconderConsentRequestedAt.getTime() + CONSENT_RESPONSE_WINDOW_MS),
       seconderConsentAt: null,
       withdrawn: false,
       createdAt: new Date(),
@@ -1339,26 +1960,22 @@ app.post('/api/applications', async (req, res) => {
       const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
       const apiBaseUrl = process.env.SERVER_URL || `http://localhost:${port}`;
 
-      // If photo is already hosted on CDN, use it directly (NO email attachment = NO attachment chip in Gmail!)
-      let mailAttachments = undefined;
-      let emailPhoto = newApplication.nomineePhoto;
-      if (emailPhoto && emailPhoto.startsWith('data:')) {
-        const photoAttachInfo = buildPhotoAttachment(emailPhoto, 'nominee-photo');
-        if (photoAttachInfo) {
-          emailPhoto = photoAttachInfo.cidUrl;
-          if (photoAttachInfo.attachment) mailAttachments = [photoAttachInfo.attachment];
-        }
-      }
+      // Only public HTTPS images are embedded in email. Base64/CID fallbacks create
+      // visible "noname" attachment chips in Gmail, so unhosted photos stay portal-only.
+      const emailPhoto = getPublicEmailImageUrl(newApplication.nomineePhoto);
 
       const emailData = generateSeconderConsentEmail({
         proposer: newApplication.proposer,
         nominee: newApplication.nominee,
         seconder: newApplication.seconder,
         targetPositions: newApplication.targetPositions,
+        previousRoles: newApplication.previousRoles,
+        roleDurations: newApplication.roleDurations,
         roleCategory: newApplication.roleCategory,
         purposeStatement: newApplication.purposeStatement,
-        nomineePhoto: emailPhoto || null,
+        nomineePhoto: emailPhoto || newApplication.nomineePhoto || null,
         consentToken: seconderConsentToken,
+        consentExpiresAt: newApplication.seconderConsentExpiresAt,
         portalUrl,
         apiBaseUrl
       });
@@ -1369,8 +1986,6 @@ app.post('/api/applications', async (req, res) => {
         subject: emailData.subject,
         html: emailData.html
       };
-      if (mailAttachments) seconderMailOptions.attachments = mailAttachments;
-
       await transporter.sendMail(seconderMailOptions);
       secondingEmailSent = true;
       console.log(`Seconding willingness request successfully sent to ${seconderEmail}`);
@@ -1397,6 +2012,15 @@ app.get('/api/nominations/seconding-consent', async (req, res) => {
   try {
     const { token, decision } = req.query;
     const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const { effectiveSettings } = await getEffectiveAlumniSettings();
+
+    if (!effectiveSettings.apply) {
+      return res.status(403).send(generateSeconderConfirmationPage({
+        success: false,
+        errorMessage: 'The nomination consent window is closed.',
+        portalUrl
+      }));
+    }
 
     if (!token) {
       return res.send(generateSeconderConfirmationPage({
@@ -1414,6 +2038,14 @@ app.get('/api/nominations/seconding-consent', async (req, res) => {
       return res.send(generateSeconderConfirmationPage({
         success: false,
         errorMessage: 'The seconding request was not found or has already been processed.',
+        portalUrl
+      }));
+    }
+
+    if (application.seconderConsentExpiredAt || await expireApplicationConsentIfNeeded(application, 'seconder')) {
+      return res.status(410).send(generateSeconderConfirmationPage({
+        success: false,
+        errorMessage: 'The 24-hour seconding consent period has expired. This request was automatically declined.',
         portalUrl
       }));
     }
@@ -1438,15 +2070,18 @@ app.get('/api/nominations/seconding-consent', async (req, res) => {
     // Generate nominee consent token if accepting
     const nomineeConsentToken = isAccept ? crypto.randomBytes(32).toString('hex') : null;
 
+    const consentRecordedAt = new Date();
+    const nomineeConsentExpiresAt = new Date(consentRecordedAt.getTime() + CONSENT_RESPONSE_WINDOW_MS);
     const updateFields = {
       seconderConsentStatus: newConsentStatus,
       status: newStatus,
-      seconderConsentAt: new Date()
+      seconderConsentAt: consentRecordedAt
     };
     if (nomineeConsentToken) {
       updateFields.nomineeConsentToken = nomineeConsentToken;
       updateFields.nomineeConsentStatus = 'pending';
-      updateFields.nomineeConsentExpiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      updateFields.nomineeConsentRequestedAt = consentRecordedAt;
+      updateFields.nomineeConsentExpiresAt = nomineeConsentExpiresAt;
     }
 
     await db.collection('applications').updateOne(
@@ -1513,24 +2148,20 @@ app.get('/api/nominations/seconding-consent', async (req, res) => {
           }
         }
 
-        let mailAttachmentsN = undefined;
-        if (emailNomineePhoto && emailNomineePhoto.startsWith('data:')) {
-          const photoAttachInfoN = buildPhotoAttachment(emailNomineePhoto, 'nominee-photo');
-          if (photoAttachInfoN) {
-            emailNomineePhoto = photoAttachInfoN.cidUrl;
-            if (photoAttachInfoN.attachment) mailAttachmentsN = [photoAttachInfoN.attachment];
-          }
-        }
+        emailNomineePhoto = getPublicEmailImageUrl(emailNomineePhoto);
 
         const nomineeEmailData = generateNomineeConsentEmail({
           proposer: application.proposer || { name: '', email: proposerEmail },
           nominee: application.nominee || { name: application.name, email: nomineeEmail },
           seconder: application.seconder || { name: '', email: application.seconderEmail },
           targetPositions: application.targetPositions,
+          previousRoles: application.previousRoles,
+          roleDurations: application.roleDurations,
           roleCategory: application.roleCategory,
           purposeStatement: application.purposeStatement || application.motivation,
-          nomineePhoto: emailNomineePhoto || null,
+          nomineePhoto: emailNomineePhoto || application.nomineePhoto || null,
           consentToken: nomineeConsentToken,
+          consentExpiresAt: nomineeConsentExpiresAt,
           portalUrl: portalUrl2,
           apiBaseUrl
         });
@@ -1540,7 +2171,6 @@ app.get('/api/nominations/seconding-consent', async (req, res) => {
           subject: nomineeEmailData.subject,
           html: nomineeEmailData.html
         };
-        if (mailAttachmentsN) nomineeMailOpts.attachments = mailAttachmentsN;
         await transporter.sendMail(nomineeMailOpts);
         console.log(`Nominee consent email dispatched to ${nomineeEmail}`);
       }
@@ -1562,9 +2192,189 @@ app.get('/api/nominations/seconding-consent', async (req, res) => {
   }
 });
 
+// Resend Seconding Willingness Email for a nomination
+app.post('/api/nominations/:id/resend-seconding-email', optionalAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid application ID' });
+    }
+
+    const application = await db.collection('applications').findOne({ _id: new ObjectId(id) });
+    if (!application) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+
+    const seconderEmail = (application.seconder?.email || application.seconderEmail || '').trim().toLowerCase();
+    if (!seconderEmail) {
+      return res.status(400).json({ error: 'Seconder email address not found on application.' });
+    }
+
+    // Host nominee photo if still base64
+    let emailNomineePhoto = application.nomineePhotoUrl || application.nomineePhoto;
+    if (emailNomineePhoto && (emailNomineePhoto.startsWith('data:') || !emailNomineePhoto.startsWith('http'))) {
+      try {
+        const hosted = await resolveNomineePhotoUrl(emailNomineePhoto);
+        if (hosted && hosted.startsWith('http')) {
+          emailNomineePhoto = hosted;
+          await db.collection('applications').updateOne(
+            { _id: application._id },
+            { $set: { nomineePhoto: hosted, nomineePhotoUrl: hosted } }
+          );
+        }
+      } catch (err) {
+        console.warn("Could not host photo during resend:", err.message);
+      }
+    }
+    emailNomineePhoto = getPublicEmailImageUrl(emailNomineePhoto);
+
+    // Refresh token if needed
+    let token = application.seconderConsentToken;
+    let expiresAt = application.seconderConsentExpiresAt;
+    if (!token || !expiresAt || new Date(expiresAt).getTime() < Date.now()) {
+      token = crypto.randomBytes(32).toString('hex');
+      expiresAt = new Date(Date.now() + CONSENT_RESPONSE_WINDOW_MS);
+      await db.collection('applications').updateOne(
+        { _id: application._id },
+        { $set: { seconderConsentToken: token, seconderConsentExpiresAt: expiresAt, seconderConsentStatus: 'pending' } }
+      );
+    }
+
+    const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const apiBaseUrl = process.env.SERVER_URL || `http://localhost:${port}`;
+    const { transporter, senderAddress } = createMailTransporter();
+
+    const emailData = generateSeconderConsentEmail({
+      proposer: application.proposer,
+      nominee: application.nominee,
+      seconder: application.seconder,
+      targetPositions: application.targetPositions,
+      previousRoles: application.previousRoles,
+      roleDurations: application.roleDurations,
+      roleCategory: application.roleCategory,
+      purposeStatement: application.purposeStatement,
+      nomineePhoto: emailNomineePhoto || application.nomineePhoto || null,
+      consentToken: token,
+      consentExpiresAt: expiresAt,
+      portalUrl,
+      apiBaseUrl
+    });
+
+    const seconderMailOptions = {
+      from: senderAddress,
+      to: seconderEmail,
+      subject: emailData.subject,
+      html: emailData.html
+    };
+
+    await transporter.sendMail(seconderMailOptions);
+    console.log(`[Resend] Seconder consent email successfully resent to ${seconderEmail}`);
+
+    res.json({
+      success: true,
+      message: `Seconding request email resent to ${seconderEmail} with nominee photo.`
+    });
+  } catch (err) {
+    console.error("Failed to resend seconder consent email:", err);
+    res.status(500).json({ error: 'Failed to resend seconder consent email: ' + err.message });
+  }
+});
+
+// Resend Nominee Consent Email for a nomination
+app.post('/api/nominations/:id/resend-nominee-email', optionalAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid application ID' });
+    }
+
+    const application = await db.collection('applications').findOne({ _id: new ObjectId(id) });
+    if (!application) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+
+    const nomineeEmail = (application.nominee?.email || application.nomineeEmail || application.email || '').trim().toLowerCase();
+    if (!nomineeEmail) {
+      return res.status(400).json({ error: 'Nominee email address not found on application.' });
+    }
+
+    // Host nominee photo if still base64
+    let emailNomineePhoto = application.nomineePhotoUrl || application.nomineePhoto;
+    if (emailNomineePhoto && (emailNomineePhoto.startsWith('data:') || !emailNomineePhoto.startsWith('http'))) {
+      try {
+        const hosted = await resolveNomineePhotoUrl(emailNomineePhoto);
+        if (hosted && hosted.startsWith('http')) {
+          emailNomineePhoto = hosted;
+          await db.collection('applications').updateOne(
+            { _id: application._id },
+            { $set: { nomineePhoto: hosted, nomineePhotoUrl: hosted } }
+          );
+        }
+      } catch (err) {
+        console.warn("Could not host photo during nominee resend:", err.message);
+      }
+    }
+    emailNomineePhoto = getPublicEmailImageUrl(emailNomineePhoto);
+
+    // Refresh token if needed
+    let token = application.nomineeConsentToken;
+    let expiresAt = application.nomineeConsentExpiresAt;
+    if (!token || !expiresAt || new Date(expiresAt).getTime() < Date.now()) {
+      token = crypto.randomBytes(32).toString('hex');
+      expiresAt = new Date(Date.now() + CONSENT_RESPONSE_WINDOW_MS);
+      await db.collection('applications').updateOne(
+        { _id: application._id },
+        { $set: { nomineeConsentToken: token, nomineeConsentExpiresAt: expiresAt } }
+      );
+    }
+
+    const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const apiBaseUrl = process.env.SERVER_URL || `http://localhost:${port}`;
+    const { transporter, senderAddress } = createMailTransporter();
+
+    const emailData = generateNomineeConsentEmail({
+      proposer: application.proposer,
+      nominee: application.nominee,
+      seconder: application.seconder,
+      targetPositions: application.targetPositions,
+      previousRoles: application.previousRoles,
+      roleDurations: application.roleDurations,
+      roleCategory: application.roleCategory,
+      purposeStatement: application.purposeStatement || application.motivation,
+      nomineePhoto: emailNomineePhoto || application.nomineePhoto || null,
+      consentToken: token,
+      consentExpiresAt: expiresAt,
+      portalUrl,
+      apiBaseUrl
+    });
+
+    const nomineeMailOptions = {
+      from: senderAddress,
+      to: nomineeEmail,
+      subject: emailData.subject,
+      html: emailData.html
+    };
+
+    await transporter.sendMail(nomineeMailOptions);
+    console.log(`[Resend] Nominee consent email successfully resent to ${nomineeEmail}`);
+
+    res.json({
+      success: true,
+      message: `Nominee consent email resent to ${nomineeEmail} with nominee photo.`
+    });
+  } catch (err) {
+    console.error("Failed to resend nominee consent email:", err);
+    res.status(500).json({ error: 'Failed to resend nominee consent email: ' + err.message });
+  }
+});
+
 // Seconder Willingness Consent API (For logged-in alumni reviewing in portal)
 app.post('/api/nominations/seconding-consent', optionalAuth, async (req, res) => {
   try {
+    const { effectiveSettings } = await getEffectiveAlumniSettings();
+    if (req.user?.role !== 'admin' && !effectiveSettings.apply) {
+      return res.status(403).json({ error: 'The nomination consent window is closed.' });
+    }
     const { applicationId, token, decision } = req.body;
     let query = {};
     if (token) {
@@ -1586,20 +2396,32 @@ app.post('/api/nominations/seconding-consent', optionalAuth, async (req, res) =>
       return res.status(404).json({ error: 'Nomination proposal not found or unauthorized' });
     }
 
+    if (application.seconderConsentExpiredAt || await expireApplicationConsentIfNeeded(application, 'seconder')) {
+      return res.status(410).json({
+        error: 'The 24-hour seconding consent period has expired. This request was automatically declined.'
+      });
+    }
+    if (application.seconderConsentStatus && application.seconderConsentStatus !== 'pending') {
+      return res.status(409).json({ error: 'Seconding consent has already been recorded.' });
+    }
+
     const isAccept = decision === 'accept';
     const newConsentStatus = isAccept ? 'accepted' : 'declined';
     const newStatus = isAccept ? 'pending_nominee_consent' : 'seconding_declined';
 
     const nomineeConsentToken = isAccept ? crypto.randomBytes(32).toString('hex') : null;
+    const consentRecordedAt = new Date();
+    const nomineeConsentExpiresAt = new Date(consentRecordedAt.getTime() + CONSENT_RESPONSE_WINDOW_MS);
     const updateFields = {
       seconderConsentStatus: newConsentStatus,
       status: newStatus,
-      seconderConsentAt: new Date()
+      seconderConsentAt: consentRecordedAt
     };
     if (nomineeConsentToken) {
       updateFields.nomineeConsentToken = nomineeConsentToken;
       updateFields.nomineeConsentStatus = 'pending';
-      updateFields.nomineeConsentExpiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      updateFields.nomineeConsentRequestedAt = consentRecordedAt;
+      updateFields.nomineeConsentExpiresAt = nomineeConsentExpiresAt;
     }
 
     await db.collection('applications').updateOne(
@@ -1631,24 +2453,20 @@ app.post('/api/nominations/seconding-consent', optionalAuth, async (req, res) =>
             }
           }
 
-          let mailAttachmentsP = undefined;
-          if (emailNomineePhoto && emailNomineePhoto.startsWith('data:')) {
-            const photoAttachInfoP = buildPhotoAttachment(emailNomineePhoto, 'nominee-photo');
-            if (photoAttachInfoP) {
-              emailNomineePhoto = photoAttachInfoP.cidUrl;
-              if (photoAttachInfoP.attachment) mailAttachmentsP = [photoAttachInfoP.attachment];
-            }
-          }
+          emailNomineePhoto = getPublicEmailImageUrl(emailNomineePhoto);
 
           const nomineeEmailData = generateNomineeConsentEmail({
             proposer: application.proposer || { name: '', email: application.proposerEmail },
             nominee: application.nominee || { name: application.name, email: nomineeEmail },
             seconder: application.seconder || { name: '', email: application.seconderEmail },
             targetPositions: application.targetPositions,
+            previousRoles: application.previousRoles,
+            roleDurations: application.roleDurations,
             roleCategory: application.roleCategory,
             purposeStatement: application.purposeStatement || application.motivation,
-            nomineePhoto: emailNomineePhoto || null,
+            nomineePhoto: emailNomineePhoto || application.nomineePhoto || null,
             consentToken: nomineeConsentToken,
+            consentExpiresAt: nomineeConsentExpiresAt,
             portalUrl: portalUrl2,
             apiBaseUrl
           });
@@ -1658,7 +2476,6 @@ app.post('/api/nominations/seconding-consent', optionalAuth, async (req, res) =>
             subject: nomineeEmailData.subject,
             html: nomineeEmailData.html
           };
-          if (mailAttachmentsP) nomineeMailOptsP.attachments = mailAttachmentsP;
           await transporter.sendMail(nomineeMailOptsP);
           console.log(`[In-portal] Nominee consent email dispatched to ${nomineeEmail}`);
         }
@@ -1683,6 +2500,15 @@ app.get('/api/nominations/nominee-consent', async (req, res) => {
   try {
     const { token, decision } = req.query;
     const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const { effectiveSettings } = await getEffectiveAlumniSettings();
+
+    if (!effectiveSettings.apply) {
+      return res.status(403).send(generateNomineeConfirmationPage({
+        success: false,
+        errorMessage: 'The nomination consent window is closed.',
+        portalUrl
+      }));
+    }
 
     if (!token) {
       return res.send(generateNomineeConfirmationPage({
@@ -1697,6 +2523,14 @@ app.get('/api/nominations/nominee-consent', async (req, res) => {
       return res.send(generateNomineeConfirmationPage({
         success: false,
         errorMessage: 'The nominee consent request was not found or has already been processed.',
+        portalUrl
+      }));
+    }
+
+    if (application.nomineeConsentExpiredAt || await expireApplicationConsentIfNeeded(application, 'nominee')) {
+      return res.status(410).send(generateNomineeConfirmationPage({
+        success: false,
+        errorMessage: 'The 24-hour nominee consent period has expired. This nomination was automatically declined.',
         portalUrl
       }));
     }
@@ -1775,6 +2609,10 @@ app.get('/api/nominations/nominee-consent', async (req, res) => {
 // Nominee Willingness Consent API (in-portal)
 app.post('/api/nominations/nominee-consent', optionalAuth, async (req, res) => {
   try {
+    const { effectiveSettings } = await getEffectiveAlumniSettings();
+    if (req.user?.role !== 'admin' && !effectiveSettings.apply) {
+      return res.status(403).json({ error: 'The nomination consent window is closed.' });
+    }
     const { applicationId, token, decision } = req.body;
     let query = {};
     if (token) {
@@ -1795,6 +2633,11 @@ app.post('/api/nominations/nominee-consent', optionalAuth, async (req, res) => {
     const application = await db.collection('applications').findOne(query);
     if (!application) {
       return res.status(404).json({ error: 'Nomination not found or unauthorized' });
+    }
+    if (application.nomineeConsentExpiredAt || await expireApplicationConsentIfNeeded(application, 'nominee')) {
+      return res.status(410).json({
+        error: 'The 24-hour nominee consent period has expired. This nomination was automatically declined.'
+      });
     }
     if (application.nomineeConsentStatus && application.nomineeConsentStatus !== 'pending') {
       return res.status(409).json({ error: 'Nominee consent has already been recorded.' });
@@ -1826,74 +2669,74 @@ app.post('/api/nominations/nominee-consent', optionalAuth, async (req, res) => {
 // List Applications with role-based visibility filter
 app.get('/api/applications', optionalAuth, async (req, res) => {
   try {
+    await expirePendingConsents();
+    const { effectiveSettings } = await getEffectiveAlumniSettings();
+    if (req.user?.role !== 'admin' && !effectiveSettings.applications) {
+      return res.status(403).json({ error: 'Nomination tracking is outside its configured availability window.' });
+    }
     const statusFilter = req.query.status;
     const emailFilter = req.query.email;
     const roleType = req.query.roleType;
     let query = {};
     const isScrutinyView = req.query.source === 'scrutiny' || (!emailFilter && (!req.user || req.user.role === 'admin'));
 
-    if (isScrutinyView) {
-      // STRICT CONSTITUTIONAL RULE:
-      // A nomination moves to the Scrutiny Committee ONLY after BOTH the seconder and nominee
-      // have affirmatively consented. Pre-consent workflow states (pending_seconding, seconding_declined,
-      // pending_nominee_consent, nominee_declined) must NEVER be viewed in the Scrutiny Panel.
-      query.seconderConsentStatus = 'accepted';
-      query.nomineeConsentStatus = 'accepted';
-      query.status = { $nin: ['pending_seconding', 'seconding_declined', 'pending_nominee_consent', 'nominee_declined'] };
+    // STRICT CONSTITUTIONAL RULE:
+    // A candidate nomination is valid and listed ONLY after BOTH the seconder and nominee
+    // have affirmatively consented. Pre-consent and declined proposals (pending_seconding,
+    // seconding_declined, pending_nominee_consent, nominee_declined) must NOT be shown.
+    query.seconderConsentStatus = 'accepted';
+    query.nomineeConsentStatus = 'accepted';
+    query.status = { $nin: ['pending_seconding', 'seconding_declined', 'pending_nominee_consent', 'nominee_declined'] };
 
-      if (statusFilter && statusFilter !== 'all') {
-        if (statusFilter === 'withdrawn') {
-          query.$or = [{ status: 'withdrawn' }, { withdrawn: true }];
-          delete query.status;
-        } else {
-          query.status = statusFilter;
-        }
-      }
-    } else {
-      if (statusFilter && statusFilter !== 'all') {
-        if (statusFilter === 'withdrawn') {
-          query.$or = [{ status: 'withdrawn' }, { withdrawn: true }];
-        } else {
-          query.status = statusFilter;
-        }
+    if (statusFilter && statusFilter !== 'all') {
+      if (statusFilter === 'withdrawn') {
+        query.$or = [{ status: 'withdrawn' }, { withdrawn: true }];
+        delete query.status;
+      } else {
+        query.status = statusFilter;
       }
     }
 
-    // Role-based visibility enforcement:
-    // If authenticated as alumni, strictly restrict visibility to their own nominations
+    const relationshipFilterFor = (email, relationship) => {
+      if (relationship === 'proposed_by_me') {
+        return { $or: [{ proposerEmail: email }, { 'proposer.email': email }] };
+      }
+      if (relationship === 'nominated_me') {
+        return {
+          $or: [
+            { nomineeEmail: email },
+            { applicantEmail: email },
+            { 'nominee.email': email }
+          ]
+        };
+      }
+      if (relationship === 'seconded_by_me') {
+        return { $or: [{ seconderEmail: email }, { 'seconder.email': email }] };
+      }
+      return {
+        $or: [
+          { applicantEmail: email },
+          { nomineeEmail: email },
+          { proposerEmail: email },
+          { 'proposer.email': email },
+          { 'nominee.email': email },
+          { seconderEmail: email },
+          { 'seconder.email': email }
+        ]
+      };
+    };
+
+    // Alumni relationship tabs are scoped using the authenticated email. The email
+    // query parameter is never trusted for deciding which alumni records are visible.
     if (req.user && req.user.role === 'alumni') {
       const alumniEmail = req.user.email.toLowerCase();
       query.$and = query.$and || [];
-      query.$and.push({
-        $or: [
-          { applicantEmail: alumniEmail },
-          { nomineeEmail: alumniEmail },
-          { proposerEmail: alumniEmail },
-          { 'proposer.email': alumniEmail },
-          { 'nominee.email': alumniEmail },
-          { seconderEmail: alumniEmail },
-          { 'seconder.email': alumniEmail }
-        ]
-      });
+      query.$and.push(relationshipFilterFor(alumniEmail, roleType));
     } else if (emailFilter) {
       const emailLower = emailFilter.toLowerCase();
-      if (roleType === 'proposed_by_me') {
-        query.$or = [{ proposerEmail: emailLower }, { 'proposer.email': emailLower }];
-      } else if (roleType === 'nominated_me') {
-        query.$or = [{ applicantEmail: emailLower }, { nomineeEmail: emailLower }, { 'nominee.email': emailLower }];
-      } else if (roleType === 'seconded_by_me') {
-        query.$or = [{ seconderEmail: emailLower }, { 'seconder.email': emailLower }];
-      } else {
-        query.$or = [
-          { applicantEmail: emailLower },
-          { nomineeEmail: emailLower },
-          { proposerEmail: emailLower },
-          { 'proposer.email': emailLower },
-          { 'nominee.email': emailLower },
-          { seconderEmail: emailLower },
-          { 'seconder.email': emailLower }
-        ];
-      }
+      const relationshipFilter = relationshipFilterFor(emailLower, roleType);
+      query.$and = query.$and || [];
+      query.$and.push(relationshipFilter);
     }
 
     const applications = await db.collection('applications').find(query).sort({ submittedAt: -1 }).toArray();
@@ -1992,39 +2835,72 @@ app.patch('/api/applications/:id/scrutiny', authenticateToken, requireAdmin, asy
 });
 
 // Candidate Nomination Withdrawal
-app.patch('/api/applications/:id/withdraw', async (req, res) => {
+app.patch('/api/applications/:id/withdraw', authenticateToken, async (req, res) => {
   try {
+    const { effectiveSettings } = await getEffectiveAlumniSettings();
+    if (req.user?.role !== 'admin' && !effectiveSettings.applications) {
+      return res.status(403).json({ error: 'The candidate withdrawal deadline has passed.' });
+    }
     const { id } = req.params;
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid nomination ID' });
+    }
     const { withdrawalReason } = req.body;
 
-    const result = await db.collection('applications').updateOne(
+    const application = await db.collection('applications').findOne({ _id: new ObjectId(id) });
+    if (!application) {
+      return res.status(404).json({ error: 'Nomination not found' });
+    }
+
+    // STRICT RULE: Only the nominee (candidate) can withdraw. Proposers and seconders cannot withdraw.
+    if (req.user?.role !== 'admin') {
+      const requesterEmail = String(req.user?.email || '').trim().toLowerCase();
+      const nomineeEmails = [
+        application.nomineeEmail,
+        application.applicantEmail,
+        application.nominee?.email
+      ].map(e => String(e || '').trim().toLowerCase()).filter(Boolean);
+
+      const isNominee = nomineeEmails.includes(requesterEmail);
+      if (!isNominee) {
+        return res.status(403).json({
+          error: 'Only the nominated candidate can withdraw this nomination. Proposers and seconders are not permitted to withdraw.'
+        });
+      }
+    }
+
+    if (application.status === 'withdrawn' || application.withdrawn) {
+      return res.status(400).json({ error: 'This nomination has already been withdrawn.' });
+    }
+
+    await db.collection('applications').updateOne(
       { _id: new ObjectId(id) },
       {
         $set: {
           status: 'withdrawn',
           withdrawn: true,
           withdrawalReason: withdrawalReason || 'Voluntary withdrawal by candidate',
+          withdrawnBy: req.user?.email || 'candidate',
           withdrawnAt: new Date(),
           updatedAt: new Date()
         }
       }
     );
 
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ error: 'Application not found' });
-    }
-
-    res.json({ success: true, message: 'Nomination withdrawn successfully' });
+    res.json({ success: true, message: 'Nomination withdrawn successfully by the candidate.' });
   } catch (err) {
-    console.error(err);
+    console.error("Error withdrawing nomination:", err);
     res.status(500).json({ error: 'Failed to withdraw application' });
   }
 });
 
 // Publication of Final List of Candidates
-app.get('/api/elections/final-list', async (req, res) => {
+app.get('/api/elections/final-list', optionalAuth, async (req, res) => {
   try {
     const config = await db.collection('voting_config').findOne({}) || { status: 'not_started', candidatesPublished: false };
+    const { effectiveSettings } = await getEffectiveAlumniSettings();
+    const isAdmin = req.user?.role === 'admin';
+    const canViewFinalList = isAdmin || effectiveSettings.finalList;
     const position = req.query.position;
     
     let query = {
@@ -2035,14 +2911,17 @@ app.get('/api/elections/final-list', async (req, res) => {
       query.targetPositions = position;
     }
 
-    let finalCandidates = await db.collection('applications')
-      .find(query)
-      .sort({ 'targetPositions.0': 1, name: 1 })
-      .toArray();
+    let finalCandidates = [];
+    if (canViewFinalList) {
+      finalCandidates = await db.collection('applications')
+        .find(query)
+        .sort({ 'targetPositions.0': 1, name: 1 })
+        .toArray();
+    }
 
     // Frontend will hide candidates for non-admins if isPublished is false
     res.json({
-      isPublished: !!config.candidatesPublished,
+      isPublished: isAdmin ? !!config.candidatesPublished : canViewFinalList,
       publishedAt: config.publishedAt || null,
       notifiedAt: config.candidatesNotifiedAt || null,
       certificationNotice: "Official Final List of Eligible Candidates certified and published by the Scrutiny Committee. All committee decisions are final and binding.",
@@ -2068,6 +2947,11 @@ app.post('/api/elections/unpublish-final-list', authenticateToken, requireAdmin,
       { $set: { candidatesPublished: false, publishedAt: null } },
       { upsert: true }
     );
+    await db.collection('publication_settings').updateOne(
+      {},
+      { $set: { finalList: false, updatedAt: new Date(), updatedBy: req.user.email } },
+      { upsert: true }
+    );
     res.json({ success: true, message: 'Final list unpublished and locked.' });
   } catch (error) {
     console.error('Error unpublishing final list:', error);
@@ -2084,6 +2968,11 @@ app.post('/api/elections/publish-final-list', authenticateToken, requireAdmin, a
       { $set: { candidatesPublished: true, publishedAt: new Date() } },
       { upsert: true }
     );
+    await db.collection('publication_settings').updateOne(
+      {},
+      { $set: { finalList: true, updatedAt: new Date(), updatedBy: req.user.email } },
+      { upsert: true }
+    );
 
     res.json({ success: true, message: 'Final candidate list published successfully. It is now visible to alumni.' });
   } catch (error) {
@@ -2092,18 +2981,24 @@ app.post('/api/elections/publish-final-list', authenticateToken, requireAdmin, a
   }
 });
 
-// POST Notify All Alumni (Admin Only - Separate email broadcast for final candidate list)
+// POST Notify Alumni (Admin Only - Supports broadcast to all or single recipient)
 app.post('/api/elections/notify-final-list', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { electionYear = '2026', appUrl = 'http://localhost:5173' } = req.body;
+    const { electionYear = '2026', appUrl = 'http://localhost:5173', targetMode = 'all', recipientEmail } = req.body;
     const notifiedAt = new Date();
 
-    // Record notification timestamp in config
-    await db.collection('voting_config').updateOne(
-      {},
-      { $set: { candidatesNotifiedAt: notifiedAt } },
-      { upsert: true }
-    );
+    if (targetMode === 'single' && (!recipientEmail || !recipientEmail.includes('@'))) {
+      return res.status(400).json({ error: 'Valid recipient email address is required.' });
+    }
+
+    // Record notification timestamp in config when broadcasting
+    if (targetMode === 'all') {
+      await db.collection('voting_config').updateOne(
+        {},
+        { $set: { candidatesNotifiedAt: notifiedAt } },
+        { upsert: true }
+      );
+    }
 
     // Send emails in background
     (async () => {
@@ -2121,9 +3016,22 @@ app.post('/api/elections/notify-final-list', authenticateToken, requireAdmin, as
           tls: { rejectUnauthorized: false }
         });
 
-        const members = await db.collection('members').find({
-          "basic.email_id": { $in: ['tarun.ganapathi2007@gmail.com', 'infintygaming28@gmail.com'] }
-        }).toArray();
+        let members = [];
+        if (targetMode === 'single' && recipientEmail) {
+          const cleanEmail = recipientEmail.trim().toLowerCase();
+          const member = await db.collection('members').findOne({ "basic.email_id": cleanEmail });
+          members = [{
+            basic: {
+              email_id: cleanEmail,
+              name: member?.basic?.name || 'Esteemed Alumnus'
+            }
+          }];
+        } else {
+          members = await db.collection('members').find({
+            "basic.email_id": { $in: ['tarun.ganapathi2007@gmail.com', 'infintygaming28@gmail.com'] }
+          }).toArray();
+        }
+
         let sentCount = 0;
         const senderAddress = process.env.SMTP_FROM || `"Alumni Election Commission" <${smtpUser}>`;
 
@@ -2145,13 +3053,19 @@ app.post('/api/elections/notify-final-list', authenticateToken, requireAdmin, as
           }
           await new Promise(r => setTimeout(r, 200)); // Rate limit
         }
-        console.log(`[Notify Alumni] Finished sending candidate announcements. Sent to ${sentCount} alumni.`);
+        console.log(`[Notify Alumni] Finished sending candidate announcements. Sent to ${sentCount} recipient(s).`);
       } catch (err) {
         console.error('[Notify Alumni] Error during broadcast:', err.message);
       }
     })();
 
-    res.json({ success: true, message: 'Announcement emails are being sent in the background.', notifiedAt });
+    res.json({
+      success: true,
+      message: targetMode === 'single'
+        ? `Final candidate list announcement is being sent to ${recipientEmail.trim()}.`
+        : 'Announcement emails are being sent to all alumni members in the background.',
+      notifiedAt
+    });
   } catch (error) {
     console.error('Error notifying alumni:', error);
     res.status(500).json({ error: 'Failed to broadcast announcement emails' });
@@ -2266,8 +3180,8 @@ async function getCandidateSummary() {
   return summary;
 }
 
-// Helper: send voting broadcast email to ALL alumni
-async function sendVotingBroadcast(emailGenerator, announcement, candidateSummary) {
+// Helper: send voting broadcast email to ALL alumni or single recipient
+async function sendVotingBroadcast(emailGenerator, announcement, candidateSummary, targetOptions = {}) {
   const smtpPass = (process.env.SMTP_PASS || '').trim().replace(/\s+/g, '');
   const smtpUser = (process.env.SMTP_USER || 'muralisubbu11@gmail.com').trim();
   if (!smtpPass) {
@@ -2281,9 +3195,28 @@ async function sendVotingBroadcast(emailGenerator, announcement, candidateSummar
     tls: { rejectUnauthorized: false }
   });
 
-  const alumniList = await db.collection('users').find({
-    email: { $in: ['tarun.ganapathi2007@gmail.com', 'infintygaming28@gmail.com'] }
-  }).toArray();
+  const { targetMode = 'all', recipientEmail } = targetOptions;
+
+  let alumniList = [];
+  if (targetMode === 'single' && recipientEmail) {
+    const cleanEmail = recipientEmail.trim().toLowerCase();
+    const foundUser = await db.collection('users').findOne({ email: cleanEmail });
+    if (foundUser) {
+      alumniList = [foundUser];
+    } else {
+      const foundMember = await db.collection('members').findOne({ "basic.email_id": cleanEmail });
+      alumniList = [{
+        email: cleanEmail,
+        name: foundMember?.basic?.name || 'Esteemed Alumni Member',
+        department: foundMember?.education?.department || '',
+        graduationYear: foundMember?.education?.graduation_year || ''
+      }];
+    }
+  } else {
+    alumniList = await db.collection('users').find({
+      email: { $in: ['tarun.ganapathi2007@gmail.com', 'infintygaming28@gmail.com'] }
+    }).toArray();
+  }
 
   const portalUrl = process.env.CLIENT_URL || 'http://localhost:5173';
   const senderAddress = process.env.SMTP_FROM || `"Alumni Election Commission" <${smtpUser}>`;
@@ -2326,7 +3259,9 @@ app.get('/api/elections/voting/status', optionalAuth, async (req, res) => {
       status: config.status || 'not_started',
       openedAt: config.openedAt || null,
       closedAt: config.closedAt || null,
-      reminderSentAt: config.reminderSentAt || null,
+      reminder2DaySentAt: config.reminder2DaySentAt || config.reminderSentAt || null,
+      reminder1DaySentAt: config.reminder1DaySentAt || null,
+      reminderSentAt: config.reminderSentAt || config.reminder2DaySentAt || null,
       notifyLiveSentAt: config.notifyLiveSentAt || null
     });
   } catch (err) {
@@ -2362,6 +3297,11 @@ app.post('/api/elections/voting/open', authenticateToken, requireAdmin, async (r
           closedBy: null
         }
       },
+      { upsert: true }
+    );
+    await db.collection('publication_settings').updateOne(
+      {},
+      { $set: { voting: true, updatedAt: new Date(), updatedBy: req.user.email } },
       { upsert: true }
     );
 
@@ -2404,9 +3344,15 @@ app.post('/api/elections/voting/open', authenticateToken, requireAdmin, async (r
   }
 });
 
-// 2b. POST notify alumni that voting is live (Admin - Separate Broadcast)
-app.post('/api/elections/voting/notify-alumni', authenticateToken, requireAdmin, async (req, res) => {
+// 2b. POST notify alumni that voting is live (Admin - Separate Broadcast or Single Recipient)
+app.post(['/api/elections/voting/notify-alumni', '/api/elections/voting/notify-live'], authenticateToken, requireAdmin, async (req, res) => {
   try {
+    const { targetMode = 'all', recipientEmail } = req.body;
+
+    if (targetMode === 'single' && (!recipientEmail || !recipientEmail.includes('@'))) {
+      return res.status(400).json({ error: 'Valid recipient email address is required.' });
+    }
+
     const rawAnnouncement = await db.collection('announcements').findOne({}, { sort: { updatedAt: -1 } });
     const announcement = { ...DEFAULT_ANNOUNCEMENT, ...(rawAnnouncement || {}) };
     const candidateSummary = await getCandidateSummary();
@@ -2414,20 +3360,25 @@ app.post('/api/elections/voting/notify-alumni', authenticateToken, requireAdmin,
     const broadcastResult = await sendVotingBroadcast(
       generateVotingLiveEmail,
       announcement,
-      candidateSummary
+      candidateSummary,
+      { targetMode, recipientEmail }
     );
 
-    await db.collection('voting_config').updateOne(
-      {},
-      { $set: { notifyLiveSentAt: new Date() } },
-      { upsert: true }
-    );
+    if (targetMode === 'all') {
+      await db.collection('voting_config').updateOne(
+        {},
+        { $set: { notifyLiveSentAt: new Date() } },
+        { upsert: true }
+      );
+    }
 
-    console.log(`[Voting] Live broadcast: ${broadcastResult.sent}/${broadcastResult.total}`);
+    console.log(`[Voting] Live notification: ${broadcastResult.sent}/${broadcastResult.total}`);
 
     res.json({
       success: true,
-      message: `Voting announcement sent to ${broadcastResult.sent} alumni members.`,
+      message: targetMode === 'single'
+        ? `Voting announcement sent directly to ${recipientEmail.trim()}.`
+        : `Voting announcement sent to ${broadcastResult.sent} alumni members.`,
       broadcast: broadcastResult
     });
   } catch (err) {
@@ -2450,6 +3401,11 @@ app.post('/api/elections/voting/close', authenticateToken, requireAdmin, async (
       },
       { upsert: true }
     );
+    await db.collection('publication_settings').updateOne(
+      {},
+      { $set: { voting: false, updatedAt: new Date(), updatedBy: req.user.email } },
+      { upsert: true }
+    );
 
     res.json({ success: true, message: 'Voting has been closed.' });
   } catch (err) {
@@ -2462,6 +3418,10 @@ app.post('/api/elections/voting/close', authenticateToken, requireAdmin, async (
 app.get('/api/elections/voting/ballot', authenticateToken, async (req, res) => {
   try {
     const config = await db.collection('voting_config').findOne({}) || { status: 'not_started' };
+    const { effectiveSettings } = await getEffectiveAlumniSettings();
+    if (req.user.role !== 'admin' && (!effectiveSettings.voting || config.status !== 'live')) {
+      return res.status(403).json({ error: 'The ballot is only available during the configured voting hours.' });
+    }
 
     const candidates = await db.collection('applications').find({
       status: 'approved',
@@ -2504,8 +3464,9 @@ app.post('/api/elections/voting/cast', authenticateToken, async (req, res) => {
     }
 
     const config = await db.collection('voting_config').findOne({});
-    if (!config || config.status !== 'live') {
-      return res.status(400).json({ error: 'Voting is not currently open.' });
+    const { effectiveSettings } = await getEffectiveAlumniSettings();
+    if (!config || config.status !== 'live' || !effectiveSettings.voting) {
+      return res.status(400).json({ error: 'Voting is only permitted during the configured voting date and hours.' });
     }
 
     const { position, candidateId } = req.body;
@@ -2714,35 +3675,90 @@ app.post('/api/elections/voting/clear-all-votes', authenticateToken, requireAdmi
   }
 });
 
-// 8. POST send reminder email (Admin) — sends to ALL alumni
-app.post('/api/elections/voting/send-reminder', authenticateToken, requireAdmin, async (req, res) => {
+// 8a. POST send 2-Day Reminder email (Admin) — Sent when voting day is the day after tomorrow (ALL alumni or single recipient)
+app.post(['/api/elections/voting/send-2day-reminder', '/api/elections/voting/send-reminder'], authenticateToken, requireAdmin, async (req, res) => {
   try {
+    const { targetMode = 'all', recipientEmail } = req.body;
+
+    if (targetMode === 'single' && (!recipientEmail || !recipientEmail.includes('@'))) {
+      return res.status(400).json({ error: 'Valid recipient email address is required.' });
+    }
+
     const rawAnnouncement = await db.collection('announcements').findOne({}, { sort: { updatedAt: -1 } });
     const announcement = { ...DEFAULT_ANNOUNCEMENT, ...(rawAnnouncement || {}) };
     const candidateSummary = await getCandidateSummary();
 
     const broadcastResult = await sendVotingBroadcast(
-      generateVotingReminderEmail,
+      generateVoting2DayReminderEmail,
       announcement,
-      candidateSummary
+      candidateSummary,
+      { targetMode, recipientEmail }
     );
 
-    // Record reminder sent timestamp
-    await db.collection('voting_config').updateOne(
-      {},
-      { $set: { reminderSentAt: new Date() } },
-      { upsert: true }
-    );
+    // Record reminder sent timestamp if broadcasting to all
+    if (targetMode === 'all') {
+      await db.collection('voting_config').updateOne(
+        {},
+        { $set: { reminder2DaySentAt: new Date(), reminderSentAt: new Date() } },
+        { upsert: true }
+      );
+    }
 
-    console.log(`[Voting] Reminder broadcast: ${broadcastResult.sent}/${broadcastResult.total}`);
+    console.log(`[Voting] 2-Day Reminder notification: ${broadcastResult.sent}/${broadcastResult.total}`);
 
     res.json({
       success: true,
-      message: `Election reminder sent to ${broadcastResult.sent} alumni members.`,
+      message: targetMode === 'single'
+        ? `2-Day election reminder (Day After Tomorrow) sent directly to ${recipientEmail.trim()}.`
+        : `2-Day election reminder (Day After Tomorrow) sent to ${broadcastResult.sent} alumni members.`,
       broadcast: broadcastResult
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to send reminder' });
+    res.status(500).json({ error: 'Failed to send 2-day reminder' });
+  }
+});
+
+// 8b. POST send 1-Day Reminder email (Admin) — Sent the day before voting day / tomorrow (ALL alumni or single recipient)
+app.post('/api/elections/voting/send-1day-reminder', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { targetMode = 'all', recipientEmail } = req.body;
+
+    if (targetMode === 'single' && (!recipientEmail || !recipientEmail.includes('@'))) {
+      return res.status(400).json({ error: 'Valid recipient email address is required.' });
+    }
+
+    const rawAnnouncement = await db.collection('announcements').findOne({}, { sort: { updatedAt: -1 } });
+    const announcement = { ...DEFAULT_ANNOUNCEMENT, ...(rawAnnouncement || {}) };
+    const candidateSummary = await getCandidateSummary();
+
+    const broadcastResult = await sendVotingBroadcast(
+      generateVoting1DayReminderEmail,
+      announcement,
+      candidateSummary,
+      { targetMode, recipientEmail }
+    );
+
+    // Record 1-day reminder sent timestamp if broadcasting to all
+    if (targetMode === 'all') {
+      await db.collection('voting_config').updateOne(
+        {},
+        { $set: { reminder1DaySentAt: new Date() } },
+        { upsert: true }
+      );
+    }
+
+    console.log(`[Voting] 1-Day Reminder notification: ${broadcastResult.sent}/${broadcastResult.total}`);
+
+    res.json({
+      success: true,
+      message: targetMode === 'single'
+        ? `1-Day election eve reminder (Voting Tomorrow) sent directly to ${recipientEmail.trim()}.`
+        : `1-Day election eve reminder (Voting Tomorrow) sent to ${broadcastResult.sent} alumni members.`,
+      broadcast: broadcastResult
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to send 1-day reminder' });
   }
 });
